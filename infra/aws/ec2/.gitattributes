@@ -1,0 +1,5 @@
+user-data.sh text eol=lf
+systemd/*.service text eol=lf
+env/*.env.example text eol=lf
+../../scripts/deploy-backend-aws.ps1 text eol=crlf
+../../scripts/deploy-backend-aws.sh text eol=lf

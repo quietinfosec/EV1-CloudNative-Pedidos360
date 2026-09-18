@@ -1,15 +1,191 @@
-# Maven
-target/
-!.mvn/wrapper/maven-wrapper.jar
+# =============================================================================
+# Pedidos360 - .gitignore raíz
+# Cubre: Angular, Node, Java, Maven, IntelliJ, VS Code, Windows,
+#        archivos .env, secretos, certificados, .pem, .key
+# =============================================================================
 
-# VS Code / IDEs
-.vscode/
+# ---- Node / npm ----
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.pnp
+.pnp.js
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+.pnp.*
+
+# ---- Angular ----
+dist/
+dist-ssr/
+*.local
+.angular/cache/
+coverage/
+.tmp/
+*.tsbuildinfo
+
+# ---- Java / Maven ----
+target/
+build/
+out/
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+hs_err_pid*
+replay_pid*
+!.mvn/wrapper/maven-wrapper.jar
+.mvn/wrapper/maven-wrapper.jar
+
+# ---- Gradle (por si acaso) ----
+.gradle/
+gradle-app.setting
+!gradle/wrapper/gradle-wrapper.jar
+
+# ---- IntelliJ IDEA ----
 .idea/
 *.iml
+*.iws
+*.ipr
+out/
+.idea_modules/
+
+# ---- Eclipse / Spring STS ----
 .classpath
 .project
 .settings/
+.factorypath
+.apt_generated/
+.springBeans
+bin/
 
-# Archivos de sistema y logs
-*.log
+# ---- VS Code ----
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json
+.history/
+*.code-workspace
+
+# ---- NetBeans ----
+nbproject/private/
+nbbuild/
+dist/
+nbdist/
+.nb-gradle/
+
+# ---- Windows ----
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.tmp
+*.temp
+~$*
+
+# ---- macOS / Linux ----
 .DS_Store
+.AppleDouble
+.LSOverride
+*.swp
+*.swo
+*~
+
+# ---- Logs ----
+*.log
+logs/
+
+# ---- Archivos .env y variables de entorno ----
+.env
+.env.*
+!.env.example
+!.env.template
+*.env.local
+
+# ---- Secretos y credenciales ----
+*.secret
+*.secrets
+secrets/
+credentials/
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.truststore
+
+# ---- Certificados y claves ----
+*.pem
+*.key
+*.cert
+*.crt
+*.csr
+*.der
+*.pub
+*.priv
+*.rsa
+*.ec
+*.x509
+*.ovpn
+
+# ---- AWS ----
+.aws/
+.aws/credentials
+.aws/config
+*.aws
+aws-credentials*
+
+# ---- Azure ----
+.azure/
+.azuread/
+*.azureauth
+azure-credentials*
+
+# ---- JWT / tokens ----
+*.jwt
+*.token
+*.pem.key
+jwt-secret*
+token-secret*
+
+# ---- Configuraciones sensibles de Spring (NO se commitean) ----
+application-secrets.properties
+application-secrets.yml
+application-secrets.yaml
+
+# ---- Terraform ----
+terraform.tfstate
+terraform.tfstate.*
+*.tfvars
+*.tfplan
+.terraform/
+.terraform.lock.hcl
+
+# ---- Bases de datos locales ----
+*.db
+*.sqlite
+*.sqlite3
+*.h2.db
+*.mv.db
+*.lock.db
+
+# ---- Cobertura de pruebas ----
+coverage/
+*.lcov
+.nyc_output/
+
+# ---- Misc ----
+*.bak
+*.backup
+*.orig
+*.rej

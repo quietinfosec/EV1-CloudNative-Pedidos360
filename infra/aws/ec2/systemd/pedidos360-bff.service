@@ -1,0 +1,15 @@
+[Unit]
+Description=Pedidos360 BFF service
+After=network.target
+
+[Service]
+User=pedidos360
+Group=pedidos360
+WorkingDirectory=/opt/pedidos360/bff
+EnvironmentFile=/etc/pedidos360/bff.env
+ExecStart=/usr/bin/java -jar /opt/pedidos360/bff/bff-service.jar
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
