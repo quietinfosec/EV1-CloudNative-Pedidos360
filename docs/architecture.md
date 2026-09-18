@@ -2,30 +2,33 @@
 
 ## Diagrama general
 
-```
+```text
 Microsoft Entra ID (Azure AD)
-        |
-        |  JWT (Access Token)
-        v
+        │
+        │  JWT (Access Token)
+        ▼
 Angular (frontend/pedidos360-web)
-        |
-        v
-AWS API Gateway
-        |
-        v
-BFF Spring Boot (backend/bff-service, puerto 8080)
-        |  validacion JWT (issuer, audience, expiracion)
-        |
-        +-------------------+
-        |                   |
-        v                   v
-Pedidos Service       Productos Service
-(backend/pedidos-service, :8081)   (backend/productos-service, :8082)
-        |                   |
-        +---------+---------+
-                  |
-                  v
-              AWS RDS
+        │
+        ▼
+AWS API Gateway (pedidos360-api)
+        │
+        │  VPC Link (pedidos360-vpc-link)
+        ▼
+Internal ALB (pedidos360-internal-alb)
+        │
+        ▼  TCP 8080
+BFF Spring Boot (backend/bff-service, EC2)
+        │  validacion JWT (issuer, audience, expiracion)
+        │
+        ├─────────────────────────┐
+        ▼                         ▼
+  Pedidos Service           Productos Service
+  (127.0.0.1:8081)          (127.0.0.1:8082)
+        │                         │
+        └────────────┬────────────┘
+                     │  TCP 5432
+                     ▼
+           Amazon RDS PostgreSQL
 ```
 
 ## Frontend en produccion
@@ -46,11 +49,13 @@ CloudFront (CDN + HTTPS)
 |-----------------------|-------------------------------------|------------------------------------------|
 | Frontend              | Angular + MSAL Angular              | UI, login, obtencion de JWT              |
 | Identidad (IdaaS)     | Microsoft Entra ID (Azure AD)       | Emite JWT, valida identidad              |
-| API Gateway           | AWS API Gateway                     | Punto de entrada publico, CORS, routing  |
+| API Gateway           | AWS API Gateway v2 (HTTP API)       | Punto de entrada publico, CORS, routing  |
+| VPC Link              | AWS API Gateway VPC Link            | Tunel privado hacia la VPC               |
+| Load Balancer         | AWS Internal ALB                    | Enrutamiento privado hacia el BFF        |
 | BFF                   | Spring Boot (bff-service, :8080)    | Valida JWT, orquesta microservicios      |
-| Pedidos Service       | Spring Boot (pedidos-service, :8081)| Logica de pedidos                        |
-| Productos Service     | Spring Boot (productos-service, :8082) | Logica de productos                   |
-| Base de datos         | AWS RDS                             | Persistencia de pedidos y productos      |
+| Pedidos Service       | Spring Boot (pedidos-service, :8081)| Logica de pedidos, Spring Data JPA       |
+| Productos Service     | Spring Boot (productos-service, :8082) | Logica de productos, Spring Data JPA  |
+| Base de datos         | Amazon RDS PostgreSQL (:5432)       | Persistencia de pedidos y productos      |
 | Hosting frontend      | Amazon S3 + CloudFront              | Sirve el build de Angular con HTTPS      |
 
 ## Flujo de autenticacion
