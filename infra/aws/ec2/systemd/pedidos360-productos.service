@@ -1,0 +1,15 @@
+[Unit]
+Description=Pedidos360 productos service
+After=network.target
+
+[Service]
+User=pedidos360
+Group=pedidos360
+WorkingDirectory=/opt/pedidos360/productos
+EnvironmentFile=/etc/pedidos360/productos.env
+ExecStart=/usr/bin/java -Djava.net.preferIPv4Stack=true -jar /opt/pedidos360/productos/productos-service.jar
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
