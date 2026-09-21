@@ -1,0 +1,27 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.main-content {
+  flex: 1;
+}
+
+.app-footer {
+  background: #0f172a;
+  color: #94a3b8;
+  padding: 1.5rem;
+  border-top: 1px solid #1e293b;
+  text-align: center;
+  font-size: 0.85rem;
+}
+
+.app-footer strong {
+  color: #f8fafc;
+}
+
+.app-footer .copyright {
+  margin-top: 0.25rem;
+  color: #64748b;
+}

@@ -1,180 +1,165 @@
-# Pedidos360
+# Pedidos360 — Plataforma Cloud Native
 
-Proyecto para la asignatura **Desarrollo Cloud Native I (DSY1107)** - Duoc UC.
+Proyecto desarrollado para la asignatura **Desarrollo Cloud Native I (DSY1107)** - Duoc UC.
 
-Estado actual: backend desplegado y verificado en AWS EC2 (`us-east-1`), con
-los tres microservicios en ejecución como servicios systemd. Detalle y
-evidencia en [docs/backend-deployment-aws.md](docs/backend-deployment-aws.md).
+Plataforma integral de gestión de productos y pedidos implementada con arquitectura desacoplada de microservicios, seguridad OAuth2/OIDC con **Microsoft Entra ID (Azure AD)**, persistencia relacional con **Spring Data JPA / Amazon RDS PostgreSQL**, y fachada pública gestionada en **AWS API Gateway**.
 
-## Arquitectura
+---
 
-Despliegue actual verificado:
+## 1. Diagrama de Arquitectura Global
 
-```text
-BFF Spring Boot (backend/bff-service, 0.0.0.0:8080)
-        |
-        +--> Pedidos Service (backend/pedidos-service, 127.0.0.1:8081)
-        |
-        +--> Productos Service (backend/productos-service, 127.0.0.1:8082)
+```mermaid
+flowchart TD
+    subgraph Frontend ["Frontend (SPA)"]
+        User(["👤 Usuario / Navegador"])
+        Angular["Angular 19 + MSAL Angular<br/>(Local :4200 / S3 + CloudFront)"]
+        EntraID["🔐 Microsoft Entra ID (Azure AD)<br/>OAuth2 / OIDC Issuer"]
+    end
+
+    subgraph AWS ["Amazon Web Services (us-east-1)"]
+        APIGW["🌐 AWS API Gateway (pedidos360-api)<br/>HTTP API v2 + CORS"]
+        VPCLink["🔒 VPC Link (pedidos360-vpc-link)"]
+        ALB["⚖️ Internal ALB (pedidos360-internal-alb)"]
+
+        subgraph EC2Host ["Amazon EC2 (i-003c43af8dfb9a3c5)"]
+            BFF["🛡️ BFF Service (:8080)<br/>Spring Security OAuth2 Resource Server<br/>(Valida JWT: firma, issuer, aud, exp)"]
+            Pedidos["📦 Pedidos Service (127.0.0.1:8081)<br/>Spring Data JPA"]
+            Productos["🛍️ Productos Service (127.0.0.1:8082)<br/>Spring Data JPA"]
+        end
+
+        RDS[("🗄️ Amazon RDS PostgreSQL (:5432)<br/>Base: pedidos360 (Storage Encrypted)")]
+    end
+
+    User -->|1. Inicia sesión| Angular
+    Angular <-->|2. Autenticación OIDC| EntraID
+    Angular -->|3. Petición API con Bearer JWT| APIGW
+    APIGW -->|4. Private Integration| VPCLink
+    VPCLink -->|5. Forward HTTP :80| ALB
+    ALB -->|6. Enruta TCP :8080| BFF
+    BFF -->|7. Proxy interno :8081| Pedidos
+    BFF -->|8. Proxy interno :8082| Productos
+    Pedidos -->|9. TCP 5432| RDS
+    Productos -->|10. TCP 5432| RDS
 ```
 
-Pedidos y Productos escuchan solo en loopback; el BFF es la única entrada
-entre los tres servicios. La transferencia se realizó por S3 privado y la
-instalación por AWS Systems Manager, sin SCP ni Key Pairs.
+---
 
-Arquitectura objetivo (etapas posteriores):
+## 2. Microservicios y Componentes
 
-```text
-Angular (frontend/pedidos360-web)
-        |
-        v
-AWS API Gateway (etapa posterior)
-        |
-        v
-BFF Spring Boot (:8080, con validación JWT en etapa posterior)
-        |
-        +--> Pedidos Service (:8081)
-        |
-        +--> Productos Service (:8082)
-                |
-                v
-        Base de datos cloud (etapa posterior)
-```
+| Componente | Tecnología | Puerto | Responsabilidad |
+|---|---|---|---|
+| **`frontend/pedidos360-web`** | Angular 19, MSAL Angular, Router, Standalone | `4200` | UI, autenticación con Entra ID, interceptor de token JWT |
+| **`backend/bff-service`** | Java 21, Spring Boot 3.3.4, Spring Security, OAuth2 | `8080` | Resource Server JWT, agregador y único punto de entrada expuesto |
+| **`backend/pedidos-service`** | Java 21, Spring Boot 3.3.4, Spring Data JPA | `8081` | Gestión de órdenes de compra, estados y persistencia en RDS |
+| **`backend/productos-service`** | Java 21, Spring Boot 3.3.4, Spring Data JPA | `8082` | Catálogo de productos, control de stock y persistencia en RDS |
+| **Amazon RDS** | PostgreSQL 16.3 | `5432` | Base de datos relacional privada y cifrada |
+| **AWS API Gateway** | HTTP API v2 | `443` | Fachada pública con soporte CORS y proxy hacia el backend |
 
-## Estructura de carpetas
+---
+
+## 3. Catálogo de Endpoints REST
+
+### 3.1 Productos (`/api/productos`)
+| Método | Endpoint | Respuesta Exitosa | Descripción |
+|---|---|---|---|
+| `GET` | `/api/productos` | `200 OK` | Lista todos los productos activos |
+| `GET` | `/api/productos/{id}` | `200 OK` / `404 Not Found` | Obtiene un producto por su ID |
+| `POST` | `/api/productos` | `201 Created` / `400 Bad Request` | Crea un nuevo producto (requiere autenticación) |
+| `PUT` | `/api/productos/{id}` | `200 OK` / `404 Not Found` | Actualiza un producto existente |
+| `DELETE` | `/api/productos/{id}` | `204 No Content` / `404 Not Found` | Desactivación lógica del producto |
+
+### 3.2 Pedidos (`/api/pedidos`)
+| Método | Endpoint | Respuesta Exitosa | Descripción |
+|---|---|---|---|
+| `GET` | `/api/pedidos` | `200 OK` | Lista pedidos (filtro opcional `?usuario=`) |
+| `GET` | `/api/pedidos/{id}` | `200 OK` / `404 Not Found` | Obtiene un pedido por su ID |
+| `GET` | `/api/pedidos/usuario/{usuario}` | `200 OK` | Obtiene los pedidos asociados a un usuario |
+| `POST` | `/api/pedidos` | `201 Created` / `400 Bad Request` | Crea un nuevo pedido |
+| `PUT` | `/api/pedidos/{id}` | `200 OK` / `404 Not Found` | Actualiza monto o estado del pedido |
+| `DELETE` | `/api/pedidos/{id}` | `204 No Content` / `404 Not Found` | Elimina el registro de pedido |
+
+### 3.3 Health Checks
+- `GET /api/health` -> `{ "service": "<nombre>", "status": "UP" }` (HTTP 200)
+- `GET /actuator/health` -> `{ "status": "UP" }` (HTTP 200)
+
+---
+
+## 4. Estructura del Repositorio
 
 ```text
 Pedidos360/
 ├── frontend/
-│   └── pedidos360-web/        # Angular con componentes standalone
+│   └── pedidos360-web/        # Aplicación Angular 19 con MSAL
+│       ├── src/app/pages/     # Vistas: home, login, productos, pedidos, perfil
+│       ├── src/app/auth/      # Configuración de MSAL, Guard e Interceptor
+│       └── src/environments/ # Variables de entorno y configuración Entra ID
 ├── backend/
-│   ├── bff-service/           # Spring Boot (puerto 8080)
-│   ├── pedidos-service/       # Spring Boot (puerto 8081)
-│   └── productos-service/     # Spring Boot (puerto 8082)
+│   ├── bff-service/           # BFF Spring Boot + OAuth2 Resource Server
+│   ├── pedidos-service/       # Microservicio Pedidos + Spring Data JPA
+│   └── productos-service/     # Microservicio Productos + Spring Data JPA
 ├── infra/aws/
-│   ├── ec2/                   # Unidades systemd, entorno y user-data
-│   ├── iam/                   # Documentación y políticas de referencia
-│   └── network/               # Documentación de red y Security Groups
-├── scripts/                   # Compilación, ejecución local y despliegue
-├── docs/                      # Documentación del proyecto
-├── dist/                      # Artefactos locales generados (no versionado)
-└── .env.example               # Plantilla de variables, sin valores reales
+│   ├── api-gateway/           # Documentación y plan de integración HTTP API v2
+│   ├── ec2/                   # Unidades systemd, user-data y entorno
+│   ├── iam/                   # Políticas de referencia y roles
+│   ├── network/               # Security Groups y topología de red
+│   └── rds/                   # Documentación y plan de Amazon RDS PostgreSQL
+├── scripts/                   # Scripts de build y verificación (PowerShell/Bash)
+├── docs/                      # Documentación de arquitectura, BD, API y auth
+│   ├── architecture.md
+│   ├── database.md
+│   ├── api-gateway.md
+│   ├── authentication.md
+│   ├── testing.md
+│   ├── backend-deployment-aws.md
+│   └── INFORME_PEDIDOS360.pdf # Informe técnico completo en PDF
+└── .env.example               # Plantilla de variables de entorno sanitizada
 ```
 
-## Tecnologías
+---
 
-**Frontend:**
+## 5. Instrucciones de Ejecución
 
-- Angular (componentes standalone)
-- TypeScript
-- Angular Router
-- HttpClient
+### 5.1 Ejecución Local
 
-**Backend:**
+#### Backend (Java 21 / Spring Boot):
+```bash
+# Compilar y ejecutar BFF (:8080)
+cd backend/bff-service && ./mvnw spring-boot:run
 
-- Java 21 (Amazon Corretto 21 en EC2)
-- Spring Boot 3.3.x
-- Maven (wrappers `mvnw` por servicio)
-- Spring Web
-- Spring Boot Actuator
-- Spring Validation
+# Compilar y ejecutar Pedidos (:8081)
+cd backend/pedidos-service && ./mvnw spring-boot:run
 
-## Microservicios
-
-| Servicio          | Puerto | Paquete                      | ArtifactId        |
-|-------------------|--------|------------------------------|-------------------|
-| bff-service       | 8080   | cl.duoc.pedidos360.bff       | bff-service       |
-| pedidos-service   | 8081   | cl.duoc.pedidos360.pedidos   | pedidos-service   |
-| productos-service | 8082   | cl.duoc.pedidos360.productos | productos-service |
-
-groupId: `cl.duoc.pedidos360`
-
-Cada microservicio expone:
-
-- `GET /api/health` → `{ "service": "<nombre>", "status": "UP" }`
-- `GET /actuator/health` → estado de Spring Boot Actuator
-
-Perfiles Spring:
-
-| Perfil | Uso                     | Configuración              |
-|--------|-------------------------|----------------------------|
-| local  | Desarrollo local        | `application-local.properties` |
-| aws    | Despliegue en AWS (EC2) | `application-aws.properties`   |
-
-Perfil activo por defecto:
-
-```text
-spring.profiles.active=${SPRING_PROFILES_ACTIVE:local}
+# Compilar y ejecutar Productos (:8082)
+cd backend/productos-service && ./mvnw spring-boot:run
 ```
 
-## Cómo ejecutar en local
-
-### Frontend
-
+#### Frontend (Angular):
 ```bash
 cd frontend/pedidos360-web
 npm install
-npm run build      # compilar
-npm start          # servir en desarrollo (http://localhost:4200)
+npm start # Disponible en http://localhost:4200
 ```
 
-### Backend
-
-Cada microservicio se compila y ejecuta de forma independiente:
-
-```bash
-cd backend/bff-service
-./mvnw clean test          # compilar y probar
-./mvnw spring-boot:run     # ejecutar
+#### Compilación completa automatizada:
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/build-all.ps1
 ```
 
-Repetir para `pedidos-service` (puerto 8081) y `productos-service`
-(puerto 8082).
+---
 
-También hay scripts de apoyo en `scripts/`: `build-all` compila frontend y
-backend, y `run-local` ayuda con la ejecución local. Ver cada script para su
-uso en Windows (`.ps1`) o Bash (`.sh`).
+## 6. Pruebas Automatizadas y Calidad
 
-## Despliegue del backend en AWS
+- **Backend**: **76 pruebas automatizadas** ejecutadas con 100% de éxito (0 fallos).
+  - `bff-service`: 18 tests (orquestación, seguridad JWT, health checks).
+  - `pedidos-service`: 30 tests (CRUD, enum de estados, validaciones, JPA).
+  - `productos-service`: 28 tests (CRUD, borrado lógico, validaciones, JPA).
+- **Aislamiento**: Pruebas ejecutadas con base de datos H2 en memoria (`scope=test`), sin dependencia de servicios cloud activos.
+- **Frontend**: Build de producción verificado con `ng build` (0 errores).
 
-Resumen verificado (sin datos sensibles):
+---
 
-- Canal de transferencia: bucket S3 privado, con Block Public Access y
-  cifrado SSE-S3; solo JAR y unidades systemd, sin `.env` reales.
-- Instalación: AWS Systems Manager Run Command, con validación SHA256 antes
-  de instalar.
-- Ubicaciones en EC2: JAR en `/opt/pedidos360/<servicio>/`, entorno en
-  `/etc/pedidos360/<servicio>.env` y unidades en `/etc/systemd/system/`.
-- Servicios `active` y `enabled`: `pedidos360-pedidos`,
-  `pedidos360-productos` y `pedidos360-bff`, en ese orden de arranque.
-- Salud: seis respuestas HTTP `200` con estado `UP`.
-- Red: `0.0.0.0:8080`, `127.0.0.1:8081` y `127.0.0.1:8082`, con Java forzado a
-  IPv4 (`-Djava.net.preferIPv4Stack=true`).
+## 7. Seguridad y Cero Secretos
 
-Documento completo: [docs/backend-deployment-aws.md](docs/backend-deployment-aws.md).
-
-## Documentación
-
-- [docs/backend-deployment-aws.md](docs/backend-deployment-aws.md) - Despliegue verificado: S3 privado, SSM, systemd, health checks y diagnóstico.
-- [docs/architecture.md](docs/architecture.md) - Arquitectura objetivo y flujos.
-- [docs/arquitectura.md](docs/arquitectura.md) - Arquitectura inicial.
-- [docs/aws-deployment.md](docs/aws-deployment.md) - Etapas futuras de despliegue.
-- [ESTADO_PEDIDOS360.md](ESTADO_PEDIDOS360.md) - Estado operativo y reparto de trabajo.
-
-## Seguridad
-
-- Ningún secreto se almacena en el repositorio: sin Access Keys, tokens,
-  contraseñas, `.pem` ni credenciales de base de datos.
-- Usar [.env.example](.env.example) como plantilla y completar los valores
-  fuera del repositorio.
-- Los archivos de entorno de EC2 (`/etc/pedidos360/*.env`) se crean
-  directamente en la instancia y contienen solo configuración no sensible.
-
-## Próximas etapas
-
-- Base de datos cloud (RDS) y persistencia con JPA.
-- AWS API Gateway, rutas y CORS.
-- Microsoft Entra ID, MSAL Angular y protección de rutas.
-- Validación JWT en el BFF (firma, issuer, audience, expiración y roles).
-- Vistas funcionales del frontend y conexión con la API real.
-- Hosting del frontend (S3 + CloudFront) y observabilidad con CloudWatch.
+- **Sin secretos en Git**: Repositorio escaneado y libre de Access Keys, Secret Keys, contraseñas, tokens JWT o archivos `.key` / `.pem`.
+- **Variables de Entorno**: Inyección de credenciales en runtime mediante `/etc/pedidos360/*.env` con permisos `640` y propietario `root:pedidos360`.
+- **Aislamiento de Red**: Microservicios `pedidos-service` y `productos-service` escuchan exclusivamente en `127.0.0.1` sin acceso público desde Internet.
