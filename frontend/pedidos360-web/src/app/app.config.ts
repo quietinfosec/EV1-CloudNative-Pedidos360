@@ -1,46 +1,31 @@
 import { ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/core';
 import { provideRouter } from '@angular/router';
-import { provideHttpClient, withInterceptorsFromDi, HTTP_INTERCEPTORS } from '@angular/common/http';
-import {
-  MSAL_INSTANCE,
-  MSAL_GUARD_CONFIG,
-  MSAL_INTERCEPTOR_CONFIG,
-  MsalService,
-  MsalGuard,
-  MsalBroadcastService,
-  MsalInterceptor
-} from '@azure/msal-angular';
+import { provideHttpClient, withInterceptors, withInterceptorsFromDi } from '@angular/common/http';
 import { routes } from './app.routes';
-import {
-  MSALInstanceFactory,
-  MSALGuardConfigFactory,
-  MSALInterceptorConfigFactory
-} from './auth/msal.config';
+import { provideAuth, authInterceptor } from 'angular-auth-oidc-client';
 
 export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
     provideRouter(routes),
-    provideHttpClient(withInterceptorsFromDi()),
-    {
-      provide: MSAL_INSTANCE,
-      useFactory: MSALInstanceFactory
-    },
-    {
-      provide: MSAL_GUARD_CONFIG,
-      useFactory: MSALGuardConfigFactory
-    },
-    {
-      provide: MSAL_INTERCEPTOR_CONFIG,
-      useFactory: MSALInterceptorConfigFactory
-    },
-    {
-      provide: HTTP_INTERCEPTORS,
-      useClass: MsalInterceptor,
-      multi: true
-    },
-    MsalService,
-    MsalGuard,
-    MsalBroadcastService
+    // Aquí agregamos el interceptor para que adjunte el JWT a tus peticiones
+    provideHttpClient(
+      withInterceptors([authInterceptor()]), 
+      withInterceptorsFromDi()
+    ),
+    provideAuth({
+      config: {
+        authority: 'https://cognito-idp.us-east-1.amazonaws.com/us-east-1_s3OGAUNw7',
+        redirectUrl: 'http://localhost:4200',
+        postLogoutRedirectUri: 'http://localhost:4200',
+        clientId: 'tb744dmtqpdhvtiifn7amcn6f',
+        scope: 'openid email',
+        responseType: 'code',
+        silentRenew: true,
+        useRefreshToken: true,
+        // ¡El candado! Solo las peticiones a esta URL llevarán el token JWT adjunto:
+        secureRoutes: ['https://hw7t4i73t4.execute-api.us-east-1.amazonaws.com/api']
+      }
+    })
   ]
 };

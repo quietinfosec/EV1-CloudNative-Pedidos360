@@ -1,10 +1,23 @@
-<app-navbar></app-navbar>
-<main class="main-content">
-  <router-outlet></router-outlet>
+<main style="text-align: center; margin-top: 100px; font-family: sans-serif;">
+  <h1>Demo Seguridad Pedidos360</h1>
+  <p>Autenticación JWT con AWS Cognito y API Gateway</p>
+  <br>
+
+  @if (!isAuthenticated) {
+    <!-- Vista cuando NO hay sesión -->
+    <button type="button" (click)="login()" style="padding: 12px 24px; font-size: 16px; cursor: pointer; background: #ff9900; color: white; border: none; border-radius: 4px;">
+      Iniciar Sesión en AWS
+    </button>
+  } @else {
+    <!-- Vista cuando SÍ hay sesión -->
+    <div style="background: #e6f4ea; padding: 20px; border-radius: 8px; display: inline-block; margin-bottom: 20px; border: 1px solid #137333;">
+      <h2 style="color: #137333; margin: 0;">¡Autenticación Exitosa!</h2>
+      <p style="color: #137333;">El token JWT ha sido validado por Cognito.</p>
+    </div>
+    <br>
+    <button type="button" (click)="logout()" style="padding: 12px 24px; font-size: 16px; cursor: pointer; background: #dc3545; color: white; border: none; border-radius: 4px;">
+      Cerrar Sesión
+    </button>
+  }
 </main>
-<footer class="app-footer">
-  <div class="footer-container">
-    <p><strong>Pedidos360</strong> — Evaluación Parcial 1 Desarrollo Cloud Native I</p>
-    <p class="copyright">Duoc UC • Amazon Web Services (AWS us-east-1) & Microsoft Entra ID</p>
-  </div>
-</footer>
+<router-outlet></router-outlet>
