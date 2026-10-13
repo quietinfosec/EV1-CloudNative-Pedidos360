@@ -3,6 +3,7 @@ package cl.duoc.pedidos360.pedidos.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -14,14 +15,18 @@ import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.springframework.context.ApplicationEventPublisher;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import cl.duoc.pedidos360.pedidos.config.RabbitMQConfig;
 import cl.duoc.pedidos360.pedidos.dto.PedidoRequest;
 import cl.duoc.pedidos360.pedidos.dto.PedidoResponse;
 import cl.duoc.pedidos360.pedidos.entity.EstadoPedido;
 import cl.duoc.pedidos360.pedidos.entity.Pedido;
+import cl.duoc.pedidos360.pedidos.event.PedidoDomainEvent;
 import cl.duoc.pedidos360.pedidos.exception.ResourceNotFoundException;
 import cl.duoc.pedidos360.pedidos.repository.PedidoRepository;
 
@@ -30,6 +35,9 @@ class PedidoServiceTests {
 
 	@Mock
 	private PedidoRepository pedidoRepository;
+
+	@Mock
+	private ApplicationEventPublisher applicationEventPublisher;
 
 	@InjectMocks
 	private PedidoServiceImpl pedidoService;
@@ -53,6 +61,11 @@ class PedidoServiceTests {
 		assertThat(result.getUsuario()).isEqualTo("ana@duoc.cl");
 		assertThat(result.getEstado()).isEqualTo(EstadoPedido.PENDIENTE);
 		verify(pedidoRepository).save(any(Pedido.class));
+
+		ArgumentCaptor<PedidoDomainEvent> eventCaptor = ArgumentCaptor.forClass(PedidoDomainEvent.class);
+		verify(applicationEventPublisher).publishEvent(eventCaptor.capture());
+		assertThat(eventCaptor.getValue().getEventType()).isEqualTo(RabbitMQConfig.PEDIDO_CREADO);
+		assertThat(eventCaptor.getValue().getPedidoId()).isEqualTo(1L);
 	}
 
 	@Test
@@ -102,6 +115,10 @@ class PedidoServiceTests {
 
 		assertThat(result).isNotNull();
 		verify(pedidoRepository).save(pedido);
+
+		ArgumentCaptor<PedidoDomainEvent> eventCaptor = ArgumentCaptor.forClass(PedidoDomainEvent.class);
+		verify(applicationEventPublisher).publishEvent(eventCaptor.capture());
+		assertThat(eventCaptor.getValue().getEventType()).isEqualTo(RabbitMQConfig.PEDIDO_ACTUALIZADO);
 	}
 
 	@Test
@@ -113,6 +130,10 @@ class PedidoServiceTests {
 
 		assertThat(pedido.getEstado()).isEqualTo(EstadoPedido.CANCELADO);
 		verify(pedidoRepository).save(pedido);
+
+		ArgumentCaptor<PedidoDomainEvent> eventCaptor = ArgumentCaptor.forClass(PedidoDomainEvent.class);
+		verify(applicationEventPublisher).publishEvent(eventCaptor.capture());
+		assertThat(eventCaptor.getValue().getEventType()).isEqualTo(RabbitMQConfig.PEDIDO_CANCELADO);
 	}
 
 	@Test
@@ -122,6 +143,16 @@ class PedidoServiceTests {
 		pedidoService.eliminar(1L);
 
 		verify(pedidoRepository).deleteById(1L);
+		verify(applicationEventPublisher, never()).publishEvent(any());
+	}
+
+	@Test
+	void shouldNotRegisterEventWhenCrearFails() {
+		when(pedidoRepository.save(any(Pedido.class))).thenThrow(new IllegalStateException("database failure"));
+
+		assertThatThrownBy(() -> pedidoService.crear(request))
+				.isInstanceOf(IllegalStateException.class);
+		verify(applicationEventPublisher, never()).publishEvent(any());
 	}
 
 	@Test
@@ -130,6 +161,7 @@ class PedidoServiceTests {
 
 		assertThatThrownBy(() -> pedidoService.eliminar(99L))
 				.isInstanceOf(ResourceNotFoundException.class);
+		verify(applicationEventPublisher, never()).publishEvent(any());
 	}
 
 }

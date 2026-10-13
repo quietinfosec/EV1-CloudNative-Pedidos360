@@ -279,12 +279,16 @@ GET    /actuator/health             -> {"status": "UP"}
 ## 10. Instrucciones de Ejecución y Compilación
 
 ### 10.1 Requisitos Previos
-- **Java JDK:** Amazon Corretto o OpenJDK 21+.
+- **Java JDK:** Amazon Corretto u OpenJDK 21. (Java 25 no es compatible con las dependencias de testing actuales.)
 - **Node.js:** v20+ / v22+ y npm v10+.
 - **PowerShell** (Windows) o **Bash** (Linux/macOS).
+- **Docker + Docker Compose:** requerido por el broker RabbitMQ local y por los tests de integración de `pedidos-service` y `productos-service`.
 
 ### 10.2 Ejecución Local del Backend
 ```bash
+# Terminal 0: RabbitMQ local (necesario para pedidos y productos)
+docker compose up -d rabbitmq
+
 # Terminal 1: BFF Service (:8080)
 cd backend/bff-service
 ./mvnw spring-boot:run
@@ -297,6 +301,8 @@ cd backend/pedidos-service
 cd backend/productos-service
 ./mvnw spring-boot:run
 ```
+
+> Management UI de RabbitMQ: <http://localhost:15672> (`guest` / `guest`, solo loopback).
 
 ### 10.3 Ejecución del Frontend
 ```bash
@@ -316,14 +322,18 @@ powershell -ExecutionPolicy Bypass -File scripts/build-all.ps1
 
 ## 11. Pruebas Automatizadas y Calidad de Código
 
-El proyecto cuenta con **76 pruebas automatizadas** en el backend ejecutadas con **100% de éxito (0 fallos)**:
+El proyecto cuenta con **115 pruebas automatizadas** en el backend ejecutadas con **100% de éxito (0 fallos)**:
 
 | Módulo | Tests | Estado | Cobertura Principal |
 |---|---|---|---|
 | `bff-service` | **18** | ✅ PASS | Orquestación REST, Spring Security JWT, 401 Unauthorized, health endpoints |
-| `pedidos-service` | **30** | ✅ PASS | CRUD Pedido, enum de estados, validaciones Jakarta, repositorio JPA |
-| `productos-service` | **28** | ✅ PASS | CRUD Producto, borrado lógico, validaciones Jakarta, repositorio JPA |
+| `pedidos-service` | **49** | ✅ PASS | CRUD Pedido, eventos RabbitMQ (publisher, AFTER_COMMIT, consumer, retry, DLQ), rollback sin evento |
+| `productos-service` | **48** | ✅ PASS | CRUD Producto, borrado lógico, eventos RabbitMQ (publisher, AFTER_COMMIT, consumer, retry, DLQ) |
 | **Frontend Web** | Build OK | ✅ PASS | Compilación de producción (`ng build`) sin errores |
+
+> Las suites de `pedidos-service` y `productos-service` requieren el broker
+> RabbitMQ local levantado (`docker compose up -d rabbitmq`). Detalle en
+> [`docs/testing.md`](docs/testing.md) y [`docs/rabbitmq-local.md`](docs/rabbitmq-local.md).
 
 ### 11.1 Hashes de Integridad SHA256 de los Artefactos
 ```text

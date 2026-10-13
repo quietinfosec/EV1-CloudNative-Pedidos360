@@ -1,0 +1,64 @@
+# =============================================================================
+# Pedidos360 - Infraestructura local (Docker Compose)
+# -----------------------------------------------------------------------------
+# Alcance de esta fase: SOLO el broker RabbitMQ.
+#
+# - No convierte los microservicios Spring Boot en contenedores.
+# - BFF (:8080), Pedidos (:8081) y Productos (:8082) se siguen ejecutando
+#   desde el host exactamente igual que hoy (scripts/run-local.*, mvnw).
+# - Los puertos 5672/15672 se publican solo en 127.0.0.1 (loopback) para que
+#   la Management UI no quede expuesta en la red local.
+# - La topologia (exchange, colas, bindings, routing keys, DLQ) NO se declara
+#   aqui: sera declarada mas adelante desde Spring Boot con RabbitMQConfig,
+#   evitando duplicar definiciones entre Docker y el codigo Java.
+#
+# Topologia / credenciales: docs/rabbitmq-local.md
+# =============================================================================
+
+services:
+  rabbitmq:
+    image: rabbitmq:4.2-management
+    container_name: pedidos360-rabbitmq
+    restart: unless-stopped
+
+    # Nombre de nodo estable: sin esto RabbitMQ deriva el directorio de datos
+    # del ID del contenedor, que cambia en cada recreacion y hace que la
+    # topologia y los mensajes no sobrevivan a `docker compose down` + `up`,
+    # pese a que el volumen rabbitmq_data este montado.
+    hostname: pedidos360-rabbitmq
+
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+      # El vhost se declara explicitamente para que coincida siempre con
+      # spring.rabbitmq.virtual-host=${RABBITMQ_VHOST:/} de los microservicios.
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-/}
+      RABBITMQ_NODENAME: rabbit@pedidos360-rabbitmq
+
+    ports:
+      # 5672  -> AMQP (protocolo que usaran los microservicios)
+      - "127.0.0.1:5672:5672"
+      # 15672 -> RabbitMQ Management UI (solo loopback, no exponer en red)
+      - "127.0.0.1:15672:15672"
+
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+
+    networks:
+      - pedidos360-network
+
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+networks:
+  pedidos360-network:
+    name: pedidos360-network
+    driver: bridge
+
+volumes:
+  rabbitmq_data:
+    name: rabbitmq_data

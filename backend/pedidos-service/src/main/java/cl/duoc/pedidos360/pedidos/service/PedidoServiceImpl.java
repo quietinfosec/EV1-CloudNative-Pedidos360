@@ -4,13 +4,18 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import cl.duoc.pedidos360.pedidos.config.RabbitMQConfig;
 import cl.duoc.pedidos360.pedidos.dto.PedidoRequest;
 import cl.duoc.pedidos360.pedidos.dto.PedidoResponse;
 import cl.duoc.pedidos360.pedidos.entity.EstadoPedido;
 import cl.duoc.pedidos360.pedidos.entity.Pedido;
+import cl.duoc.pedidos360.pedidos.event.PedidoDomainEvent;
 import cl.duoc.pedidos360.pedidos.exception.ResourceNotFoundException;
 import cl.duoc.pedidos360.pedidos.repository.PedidoRepository;
 
@@ -18,10 +23,14 @@ import cl.duoc.pedidos360.pedidos.repository.PedidoRepository;
 @Transactional
 public class PedidoServiceImpl implements PedidoService {
 
-	private final PedidoRepository pedidoRepository;
+	private static final Logger log = LoggerFactory.getLogger(PedidoServiceImpl.class);
 
-	public PedidoServiceImpl(PedidoRepository pedidoRepository) {
+	private final PedidoRepository pedidoRepository;
+	private final ApplicationEventPublisher applicationEventPublisher;
+
+	public PedidoServiceImpl(PedidoRepository pedidoRepository, ApplicationEventPublisher applicationEventPublisher) {
 		this.pedidoRepository = pedidoRepository;
+		this.applicationEventPublisher = applicationEventPublisher;
 	}
 
 	@Override
@@ -34,6 +43,7 @@ public class PedidoServiceImpl implements PedidoService {
 				request.getTotal()
 		);
 		Pedido guardado = pedidoRepository.save(pedido);
+		registerEvent(guardado, RabbitMQConfig.PEDIDO_CREADO);
 		return PedidoResponse.fromEntity(guardado);
 	}
 
@@ -75,6 +85,7 @@ public class PedidoServiceImpl implements PedidoService {
 		}
 
 		Pedido actualizado = pedidoRepository.save(pedido);
+		registerEvent(actualizado, RabbitMQConfig.PEDIDO_ACTUALIZADO);
 		return PedidoResponse.fromEntity(actualizado);
 	}
 
@@ -83,7 +94,8 @@ public class PedidoServiceImpl implements PedidoService {
 		Pedido pedido = pedidoRepository.findById(id)
 				.orElseThrow(() -> new ResourceNotFoundException("Pedido con ID " + id + " no encontrado"));
 		pedido.setEstado(EstadoPedido.CANCELADO);
-		pedidoRepository.save(pedido);
+		Pedido cancelado = pedidoRepository.save(pedido);
+		registerEvent(cancelado, RabbitMQConfig.PEDIDO_CANCELADO);
 	}
 
 	@Override
@@ -92,6 +104,18 @@ public class PedidoServiceImpl implements PedidoService {
 			throw new ResourceNotFoundException("Pedido con ID " + id + " no encontrado");
 		}
 		pedidoRepository.deleteById(id);
+	}
+
+	private void registerEvent(Pedido pedido, String eventType) {
+		applicationEventPublisher.publishEvent(new PedidoDomainEvent(
+				eventType,
+				pedido.getId(),
+				pedido.getEstado().name(),
+				pedido.getUsuario(),
+				pedido.getTotal(),
+				null
+		));
+		log.debug("Evento interno registrado eventType={} pedidoId={}", eventType, pedido.getId());
 	}
 
 }

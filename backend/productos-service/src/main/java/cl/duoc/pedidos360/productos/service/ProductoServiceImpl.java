@@ -1,14 +1,20 @@
 package cl.duoc.pedidos360.productos.service;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import cl.duoc.pedidos360.productos.config.RabbitMQConfig;
 import cl.duoc.pedidos360.productos.dto.ProductoRequest;
 import cl.duoc.pedidos360.productos.dto.ProductoResponse;
 import cl.duoc.pedidos360.productos.entity.Producto;
+import cl.duoc.pedidos360.productos.event.ProductoDomainEvent;
 import cl.duoc.pedidos360.productos.exception.ResourceNotFoundException;
 import cl.duoc.pedidos360.productos.repository.ProductoRepository;
 
@@ -16,10 +22,14 @@ import cl.duoc.pedidos360.productos.repository.ProductoRepository;
 @Transactional
 public class ProductoServiceImpl implements ProductoService {
 
-	private final ProductoRepository productoRepository;
+	private static final Logger log = LoggerFactory.getLogger(ProductoServiceImpl.class);
 
-	public ProductoServiceImpl(ProductoRepository productoRepository) {
+	private final ProductoRepository productoRepository;
+	private final ApplicationEventPublisher applicationEventPublisher;
+
+	public ProductoServiceImpl(ProductoRepository productoRepository, ApplicationEventPublisher applicationEventPublisher) {
 		this.productoRepository = productoRepository;
+		this.applicationEventPublisher = applicationEventPublisher;
 	}
 
 	@Override
@@ -33,6 +43,7 @@ public class ProductoServiceImpl implements ProductoService {
 				true
 		);
 		Producto guardado = productoRepository.save(producto);
+		registerEvent(guardado, RabbitMQConfig.PRODUCTO_CREADO);
 		return ProductoResponse.fromEntity(guardado);
 	}
 
@@ -66,6 +77,7 @@ public class ProductoServiceImpl implements ProductoService {
 	public ProductoResponse actualizar(Long id, ProductoRequest request) {
 		Producto producto = productoRepository.findById(id)
 				.orElseThrow(() -> new ResourceNotFoundException("Producto con ID " + id + " no encontrado"));
+		boolean stockChanged = !Objects.equals(producto.getStock(), request.getStock());
 
 		producto.setNombre(request.getNombre().trim());
 		producto.setDescripcion(request.getDescripcion());
@@ -73,6 +85,10 @@ public class ProductoServiceImpl implements ProductoService {
 		producto.setStock(request.getStock());
 
 		Producto actualizado = productoRepository.save(producto);
+		String eventType = stockChanged
+				? RabbitMQConfig.PRODUCTO_STOCK_ACTUALIZADO
+				: RabbitMQConfig.PRODUCTO_ACTUALIZADO;
+		registerEvent(actualizado, eventType);
 		return ProductoResponse.fromEntity(actualizado);
 	}
 
@@ -82,6 +98,18 @@ public class ProductoServiceImpl implements ProductoService {
 				.orElseThrow(() -> new ResourceNotFoundException("Producto con ID " + id + " no encontrado"));
 		producto.setActivo(false);
 		productoRepository.save(producto);
+	}
+
+	private void registerEvent(Producto producto, String eventType) {
+		applicationEventPublisher.publishEvent(new ProductoDomainEvent(
+				eventType,
+				producto.getId(),
+				producto.getNombre(),
+				producto.getStock(),
+				producto.getPrecio(),
+				null
+		));
+		log.debug("Evento interno registrado eventType={} productoId={}", eventType, producto.getId());
 	}
 
 }
