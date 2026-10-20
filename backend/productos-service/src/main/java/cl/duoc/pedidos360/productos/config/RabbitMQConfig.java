@@ -46,9 +46,21 @@ public class RabbitMQConfig {
 	public static final String PRODUCTOS_ERRORES_DLQ_ROUTING_KEY = "productos.errores.dlq";
 
 	// EP3: routing keys del Topic Exchange: TOPIC_ROUTING_PREFIX + eventType.
+	// El patron de binding es deliberadamente especifico ("productos.producto.#")
+	// para no capturar subdominios futuros no previstos; las routing keys
+	// publicadas se derivan con topicRoutingKey(...) para garantizar que
+	// publicador y binding compartan una unica fuente de verdad.
 	public static final String TOPIC_ROUTING_PREFIX = "productos.";
 	public static final String TOPIC_BINDING_PRODUCTOS = "productos.producto.#";
 	public static final String TOPIC_BINDING_ALL = "#";
+
+	/**
+	 * Construye la routing key canonica del Topic Exchange para un eventType.
+	 * Ejemplo: {@code topicRoutingKey("producto.creado") -> "productos.producto.creado"}.
+	 */
+	public static String topicRoutingKey(String eventType) {
+		return TOPIC_ROUTING_PREFIX + eventType;
+	}
 
 	public static final String PRODUCTOS_COLA_DLQ_ROUTING_KEY = "pedidos360.productos.dlq";
 	public static final String AUDITORIA_COLA_DLQ_ROUTING_KEY = "pedidos360.auditoria.dlq";

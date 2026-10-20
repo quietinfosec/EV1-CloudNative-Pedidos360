@@ -58,7 +58,7 @@ public class ProductoEventPublisher implements ProductoPublisher {
 		// EP3: fan-out al Topic Exchange (dominio.entidad.accion). Los errores
 		// permanecen solo en el exchange directo para no contaminar la cola principal.
 		if (!RabbitMQConfig.PRODUCTO_ERROR.equals(routingKey)) {
-			String topicRoutingKey = RabbitMQConfig.TOPIC_ROUTING_PREFIX + routingKey;
+			String topicRoutingKey = RabbitMQConfig.topicRoutingKey(routingKey);
 			rabbitTemplate.convertAndSend(RabbitMQConfig.TOPIC_EXCHANGE_NAME, topicRoutingKey, event);
 			log.info(
 					"Evento RabbitMQ publicado (topic) eventId={} eventType={} productoId={} routingKey={} correlationId={}",

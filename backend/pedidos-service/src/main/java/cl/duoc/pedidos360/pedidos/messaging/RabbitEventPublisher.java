@@ -40,7 +40,7 @@ public class RabbitEventPublisher implements EventPublisher {
 		// EP3: fan-out al Topic Exchange (dominio.entidad.accion). Los errores
 		// permanecen solo en el exchange directo para no contaminar la cola principal.
 		if (!RabbitMQConfig.PEDIDO_ERROR.equals(routingKey)) {
-			String topicRoutingKey = RabbitMQConfig.TOPIC_ROUTING_PREFIX + routingKey;
+			String topicRoutingKey = RabbitMQConfig.topicRoutingKey(routingKey);
 			rabbitTemplate.convertAndSend(RabbitMQConfig.TOPIC_EXCHANGE_NAME, topicRoutingKey, payload);
 			log.info(
 					"Evento RabbitMQ publicado (topic) exchange={} routingKey={}",
