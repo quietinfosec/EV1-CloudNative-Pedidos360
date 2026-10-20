@@ -19,9 +19,32 @@
 | 2 | Protección (Git) | ✅ Hecho | rama + verificación, sin push |
 | 3 | Diseño | ✅ Hecho | `02-arquitectura-objetivo.md` |
 | 4 | Implementación incremental | ✅ Hecho (4.1–4.6) | código + tests |
-| 5 | Verificación y cierre | ⏳ Pendiente | evidencias + este plan actualizado |
+| 5 | Verificación y cierre | ✅ Hecho | evidencias + este plan actualizado |
 
 **Regla de oro por tarea:** *cada cambio termina con las 3 suites en verde* antes de pasar a la siguiente.
+
+### Estado de la consolidación (Fases 1–10 de cierre, verificadas)
+
+| Fase de cierre | Nombre | Estado | Commit |
+|---|---|---|---|
+| 1 | Protección y diagnóstico (Git/secretos) | ✅ Hecho | `89d80ed` |
+| 2 | Routing keys / bindings (helper `topicRoutingKey`) | ✅ Hecho | `2497abe` |
+| 3 | Unificar adaptadores Rabbit/SQS | ✅ Hecho | `c9b5ae2` |
+| 4 | ACK/NACK + DLQ (tests de dead-letter con `x-death`) | ✅ Hecho | `a4b3fbc` |
+| 5 | Auditoría `rabbitmq-admin-service` | ✅ Hecho | sin cambios (15/15) |
+| 6 | Seguridad JWT E2E (inválido/expirado/válido/perfil) | ✅ Hecho | `388bcc9` |
+| 7 | PostgreSQL (persistencia real) | ✅ Hecho | `94a54ab` |
+| 8 | Validación integral | ✅ Hecho | sin cambios |
+| 9 | Documentación (04–06) | ✅ Hecho | — |
+| 10 | Git (commits convencionales) | ✅ Hecho | sin push |
+
+### Verificación consolidada (secuencial, broker compartido)
+
+- `rabbitmq` (default): BFF **21** · Pedidos **65** · Productos **65** · Admin **15** — **todos en verde**.
+- `MESSAGING_PROVIDER=sqs`: Pedidos **65** (10 *skipped*) · Productos **65** (11 *skipped*) — sin fallos; los tests de integración Rabbit quedan *gateados* con `@EnabledIf`.
+- PostgreSQL real (`@Tag("postgres")`, contenedor `55432`): Pedidos **1** · Productos **1** — verde (tablas `pedidos`/`productos` creadas con `ddl-auto=update`).
+- Frontend Angular: `npm run build` → **BUILD SUCCESS**.
+- ElasticMQ `pedidos360-elasticmq` *healthy*; smoke real de `SendMessage` sobre `pedidos360-eventos` verificado.
 
 ### Estado de ejecución Fase 4 (verificado)
 
@@ -34,15 +57,19 @@
 | 4.5 Seguridad JWT extremo a extremo | ✅ Hecho | `BearerTokenPropagationInterceptor`, `SecurityConfig` (BFF 21 / Pedidos / Productos) |
 | 4.4 Adaptador SQS / ElasticMQ | ✅ Hecho | puerto `EventPublisher`/`ProductoPublisher`, `RabbitEventPublisher`/`SqsEventPublisher`, `SqsConfig`, `elasticmq.conf`, `SqsEventPublisherTests` |
 
-**Verificación de suites (secuencial, broker compartido):**
+**Verificación de suites (secuencial, broker compartido) — estado inicial tras 4.1–4.6:**
 - `rabbitmq` (default): BFF 21 · Pedidos 56 · Productos 56 · Admin 15 — **todos en verde**.
 - `MESSAGING_PROVIDER=sqs`: Pedidos 56 (9 skipped) · Productos 56 (10 skipped) — **sin fallos**; los tests de integración Rabbit quedan correctamente *gateados* con `@EnabledIf`.
 - ElasticMQ `pedidos360-elasticmq` *healthy*; cola `pedidos360-eventos` recibe mensajes SQS reales.
 
-**Divergencias a reconciliar en Fase 5 (registradas):**
-1. **Bindings (4.1):** el plan dice `pedidos.#`, `productos.#`, `#.error`; se implementó `pedidos.pedido.#`, `productos.producto.#`, `#` (los eventos de error no se publican al topic).
-2. **Diseño SQS (4.4):** Pedidos usa un puerto genérico `EventPublisher` + fachada `PedidoEventPublisher`; Productos hace que `ProductoEventPublisher` implemente directamente el puerto `ProductoPublisher`. Unificar criterio o documentar la asimetría.
-3. **Nombres de paquetes/adaptadores (4.4):** los adaptadores finales viven en el paquete `messaging` (`RabbitEventPublisher`, `SqsEventPublisher`, `SqsConfig`); la fachada de dominio queda en `event` (`PedidoEventPublisher`, `ProductoEventPublisher`). Ajustar las referencias del doc 03 a los nombres reales.
+> El conteo final consolidado (tras añadir los tests de las Fases 2, 4 y 6) es Pedidos **65** y Productos **65**; ver la *Verificación consolidada* más arriba.
+
+**Divergencias reconciliadas en la consolidación (Fases 1–7 de cierre):**
+1. **Bindings (4.1) — RESUELTO (se mantiene el patrón específico):** el plan decía `pedidos.#`, `productos.#`, `#.error`; la implementación consolidada usa `pedidos.pedido.#`, `productos.producto.#` y `#` (los eventos de error **no** se publican al topic, sólo al direct exchange). Se decidió mantener el patrón específico por ser más preciso que `pedidos.#` y **centralizar** la construcción de la routing key en `RabbitMQConfig.topicRoutingKey(eventType)` como única fuente de verdad (`TOPIC_ROUTING_PREFIX + eventType`). No hay bindings superpuestos sobre la misma cola, por lo que no hay entregas duplicadas.
+2. **Diseño SQS (4.4) — RESUELTO (enfoque mínimo, asimetría documentada):** se conserva el diseño propio de cada servicio. Pedidos usa un puerto genérico `EventPublisher` + fachada `PedidoEventPublisher`; Productos usa el puerto de dominio `ProductoPublisher`. Se corrigió la única inconsistencia aislada: `SqsProductoEventPublisher` ahora propaga la routing key como atributo SQS (`routingKey`), en paridad con pedidos. La diferencia hexagonal (AMQP vs SQS) se documenta en `docs/ep3/04-consolidacion-implementacion.md`.
+3. **Nombres de paquetes/adaptadores (4.4) — RESUELTO:** los adaptadores viven en el paquete `messaging` (`RabbitEventPublisher`, `SqsEventPublisher`, `SqsConfig`); las fachadas de dominio en `event` (`PedidoEventPublisher`, `ProductoEventPublisher`).
+4. **ACK/NACK (4A) — HALLAZGO documentado:** no existe un `MessageRecoverer` explícito. La configuración `acknowledge-mode=auto` + retry(`max-attempts=3`) + `default-requeue-rejected=false` hace que `ConditionalRejectingErrorHandler` ("Retry Policy Exhausted") rechace sin requeue → DLX → DLQ, comportamiento verificado end-to-end en Fase 4 de consolidación.
+5. **Puerto PostgreSQL local — DIVERGENCIA de entorno:** el contenedor `pedidos360-postgres` publica en `127.0.0.1:55432:5432` (no `5432`) para convivir con un PostgreSQL nativo que pudiera ocupar `5432`. Los servicios se conectan con `DB_PORT=55432`.
 
 ---
 
@@ -138,7 +165,7 @@
 | Direct Exchange | Cumple | mantener |
 | Topic Exchange | ✅ Cumple | **4.1** |
 | DLX + DLQ por dominio | Cumple | mantener |
-| ACK/NACK reintentos limitados | Cumple | 4.1/4.2 (MessageRecoverer explícito) |
+| ACK/NACK reintentos limitados | ✅ Cumple | retry 3 + `default-requeue-rejected=false`; sin `MessageRecoverer` explícito (ver §Divergencias 4) |
 | Conservar SQS/ElasticMQ | ✅ Cumple | **4.4** |
 | Frontend Angular | Cumple | mantener |
 | Seguridad JWT/IDaaS | ✅ Cumple | **4.5** |

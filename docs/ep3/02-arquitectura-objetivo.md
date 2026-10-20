@@ -5,6 +5,8 @@
 - **Basado en:** `docs/ep3/01-auditoria-inicial.md` (estado real verificado)
 - **Principio rector:** **migración incremental**. Se conserva todo lo funcional (115/115 tests verdes) y se **añade** lo que la rúbrica pide. No se reescribe ni se elimina código existente sin justificación.
 
+> **ESTADO FINAL (2026-10-20):** esta arquitectura objetivo fue **implementada y verificada**. Divergencias respecto a este diseño (patrón de binding específico `pedidos.pedido.#`, asimetría de adaptadores AMQP/SQS, ausencia de `MessageRecoverer` explícito, puerto PostgreSQL local `55432`) están documentadas en `04-consolidacion-implementacion.md`.
+
 ---
 
 ## 1. Visión de la arquitectura objetivo
