@@ -1,5 +1,7 @@
 package cl.duoc.pedidos360.productos.messaging;
 
+import java.util.Map;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -10,6 +12,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import software.amazon.awssdk.services.sqs.SqsClient;
+import software.amazon.awssdk.services.sqs.model.MessageAttributeValue;
 import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
 
 import cl.duoc.pedidos360.productos.config.RabbitMQConfig;
@@ -21,12 +24,16 @@ import cl.duoc.pedidos360.productos.event.ProductoPublisher;
  *
  * Se activa con {@code messaging.provider=sqs} en lugar de
  * {@code ProductoEventPublisher} (RabbitMQ). Publica el payload serializado
- * como JSON; la routing key del dominio se preserva dentro del evento
- * ({@code eventType}).
+ * como JSON y, por paridad con el adaptador de pedidos, expone la routing key
+ * del dominio como atributo del mensaje ({@link #ROUTING_KEY_ATTRIBUTE}); SQS
+ * no enruta por atributos, por lo que el {@code eventType} viaja ademas dentro
+ * del propio evento.
  */
 @Component
 @ConditionalOnProperty(name = "messaging.provider", havingValue = "sqs")
 public class SqsProductoEventPublisher implements ProductoPublisher {
+
+	public static final String ROUTING_KEY_ATTRIBUTE = "routingKey";
 
 	private static final Logger log = LoggerFactory.getLogger(SqsProductoEventPublisher.class);
 
@@ -68,11 +75,15 @@ public class SqsProductoEventPublisher implements ProductoPublisher {
 	}
 
 	private void publish(ProductoEvent event, String routingKey) {
-		String topicRoutingKey = RabbitMQConfig.TOPIC_ROUTING_PREFIX + routingKey;
+		String topicRoutingKey = RabbitMQConfig.topicRoutingKey(routingKey);
 		try {
 			sqsClient.sendMessage(SendMessageRequest.builder()
 					.queueUrl(queueUrl)
 					.messageBody(objectMapper.writeValueAsString(event))
+					.messageAttributes(Map.of(ROUTING_KEY_ATTRIBUTE, MessageAttributeValue.builder()
+							.dataType("String")
+							.stringValue(topicRoutingKey)
+							.build()))
 					.build());
 			log.info(
 					"Evento SQS publicado eventId={} eventType={} productoId={} routingKey={} queueUrl={}",

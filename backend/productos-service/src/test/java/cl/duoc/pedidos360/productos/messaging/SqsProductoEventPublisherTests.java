@@ -48,7 +48,7 @@ class SqsProductoEventPublisherTests {
 	}
 
 	@Test
-	void publicaElEventoConElPayloadJson() {
+	void publicaElEventoConElPayloadJsonYLaRoutingKeyComoAtributo() {
 		publisher.publishProductoCreado(event);
 
 		ArgumentCaptor<SendMessageRequest> captor = ArgumentCaptor.forClass(SendMessageRequest.class);
@@ -58,6 +58,8 @@ class SqsProductoEventPublisherTests {
 		assertThat(request.queueUrl()).isEqualTo("http://localhost:9324/000000000000/pedidos360-eventos");
 		assertThat(request.messageBody()).contains("\"productoId\":2001");
 		assertThat(request.messageBody()).contains(RabbitMQConfig.PRODUCTO_CREADO);
+		assertThat(request.messageAttributes().get(SqsProductoEventPublisher.ROUTING_KEY_ATTRIBUTE).stringValue())
+				.isEqualTo(RabbitMQConfig.topicRoutingKey(RabbitMQConfig.PRODUCTO_CREADO));
 	}
 
 	@Test
