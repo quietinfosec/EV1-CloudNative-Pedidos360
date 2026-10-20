@@ -3,11 +3,13 @@ package cl.duoc.pedidos360.productos.event;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import cl.duoc.pedidos360.productos.config.RabbitMQConfig;
 
 @Component
+@ConditionalOnProperty(name = "messaging.provider", havingValue = "rabbitmq", matchIfMissing = true)
 public class ProductoEventConsumer {
 
 	private static final Logger log = LoggerFactory.getLogger(ProductoEventConsumer.class);

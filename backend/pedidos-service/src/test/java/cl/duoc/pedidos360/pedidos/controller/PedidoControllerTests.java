@@ -32,6 +32,7 @@ import cl.duoc.pedidos360.pedidos.exception.ResourceNotFoundException;
 import cl.duoc.pedidos360.pedidos.service.PedidoService;
 
 @WebMvcTest(PedidoController.class)
+@org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc(addFilters = false)
 class PedidoControllerTests {
 
 	@Autowired

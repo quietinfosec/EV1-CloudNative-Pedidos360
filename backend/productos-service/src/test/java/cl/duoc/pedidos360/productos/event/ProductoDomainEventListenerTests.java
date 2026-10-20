@@ -19,7 +19,7 @@ import cl.duoc.pedidos360.productos.config.RabbitMQConfig;
 class ProductoDomainEventListenerTests {
 
 	@Mock
-	private ProductoEventPublisher publisher;
+	private ProductoPublisher publisher;
 
 	@InjectMocks
 	private ProductoDomainEventListener listener;

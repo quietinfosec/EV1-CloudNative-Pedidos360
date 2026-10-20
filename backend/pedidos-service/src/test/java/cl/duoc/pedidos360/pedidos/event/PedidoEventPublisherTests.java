@@ -11,15 +11,15 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 
 import cl.duoc.pedidos360.pedidos.config.RabbitMQConfig;
+import cl.duoc.pedidos360.pedidos.messaging.EventPublisher;
 
 @ExtendWith(MockitoExtension.class)
 class PedidoEventPublisherTests {
 
 	@Mock
-	private RabbitTemplate rabbitTemplate;
+	private EventPublisher eventPublisher;
 
 	@InjectMocks
 	private PedidoEventPublisher publisher;
@@ -36,7 +36,7 @@ class PedidoEventPublisherTests {
 		publisher.publishPedidoCreado(event);
 
 		assertThat(event.getEventType()).isEqualTo(RabbitMQConfig.PEDIDO_CREADO);
-		verify(rabbitTemplate).convertAndSend(RabbitMQConfig.EXCHANGE_NAME, RabbitMQConfig.PEDIDO_CREADO, event);
+		verify(eventPublisher).publish(RabbitMQConfig.PEDIDO_CREADO, event);
 	}
 
 	@Test
@@ -44,7 +44,7 @@ class PedidoEventPublisherTests {
 		publisher.publishPedidoActualizado(event);
 
 		assertThat(event.getEventType()).isEqualTo(RabbitMQConfig.PEDIDO_ACTUALIZADO);
-		verify(rabbitTemplate).convertAndSend(RabbitMQConfig.EXCHANGE_NAME, RabbitMQConfig.PEDIDO_ACTUALIZADO, event);
+		verify(eventPublisher).publish(RabbitMQConfig.PEDIDO_ACTUALIZADO, event);
 	}
 
 	@Test
@@ -52,7 +52,7 @@ class PedidoEventPublisherTests {
 		publisher.publishPedidoCancelado(event);
 
 		assertThat(event.getEventType()).isEqualTo(RabbitMQConfig.PEDIDO_CANCELADO);
-		verify(rabbitTemplate).convertAndSend(RabbitMQConfig.EXCHANGE_NAME, RabbitMQConfig.PEDIDO_CANCELADO, event);
+		verify(eventPublisher).publish(RabbitMQConfig.PEDIDO_CANCELADO, event);
 	}
 
 	@Test
@@ -60,7 +60,7 @@ class PedidoEventPublisherTests {
 		publisher.publishPedidoError(event);
 
 		assertThat(event.getEventType()).isEqualTo(RabbitMQConfig.PEDIDO_ERROR);
-		verify(rabbitTemplate).convertAndSend(RabbitMQConfig.EXCHANGE_NAME, RabbitMQConfig.PEDIDO_ERROR, event);
+		verify(eventPublisher).publish(RabbitMQConfig.PEDIDO_ERROR, event);
 	}
 
 }

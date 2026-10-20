@@ -5,6 +5,7 @@ import org.springframework.amqp.core.BindingBuilder;
 import org.springframework.amqp.core.DirectExchange;
 import org.springframework.amqp.core.Queue;
 import org.springframework.amqp.core.QueueBuilder;
+import org.springframework.amqp.core.TopicExchange;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
@@ -20,10 +21,21 @@ public class RabbitMQConfig {
 	public static final String EXCHANGE_NAME = "pedidos360.direct.exchange";
 	public static final String DLX_NAME = "pedidos360.dlx";
 
+	// EP3: Topic Exchange para fan-out de eventos por patron (dominio.entidad.accion).
+	public static final String TOPIC_EXCHANGE_NAME = "pedidos360.topic.exchange";
+
 	public static final String PRODUCTOS_EVENTOS_QUEUE = "productos.eventos.queue";
 	public static final String PRODUCTOS_ERRORES_QUEUE = "productos.errores.queue";
 	public static final String PRODUCTOS_EVENTOS_DLQ = "productos.eventos.dlq";
 	public static final String PRODUCTOS_ERRORES_DLQ = "productos.errores.dlq";
+
+	// EP3: colas principales del diseno objetivo + DLQ por dominio.
+	// productos-service declara "productos" y "auditoria"; "auditoria" es
+	// compartida con pedidos-service (declaracion idempotente).
+	public static final String PRODUCTOS_COLA = "pedidos360.productos.cola";
+	public static final String PRODUCTOS_COLA_DLQ = "pedidos360.productos.dlq";
+	public static final String AUDITORIA_COLA = "pedidos360.auditoria.cola";
+	public static final String AUDITORIA_COLA_DLQ = "pedidos360.auditoria.dlq";
 
 	public static final String PRODUCTO_CREADO = "producto.creado";
 	public static final String PRODUCTO_ACTUALIZADO = "producto.actualizado";
@@ -33,6 +45,14 @@ public class RabbitMQConfig {
 	public static final String PRODUCTOS_EVENTOS_DLQ_ROUTING_KEY = "productos.eventos.dlq";
 	public static final String PRODUCTOS_ERRORES_DLQ_ROUTING_KEY = "productos.errores.dlq";
 
+	// EP3: routing keys del Topic Exchange: TOPIC_ROUTING_PREFIX + eventType.
+	public static final String TOPIC_ROUTING_PREFIX = "productos.";
+	public static final String TOPIC_BINDING_PRODUCTOS = "productos.producto.#";
+	public static final String TOPIC_BINDING_ALL = "#";
+
+	public static final String PRODUCTOS_COLA_DLQ_ROUTING_KEY = "pedidos360.productos.dlq";
+	public static final String AUDITORIA_COLA_DLQ_ROUTING_KEY = "pedidos360.auditoria.dlq";
+
 	@Bean
 	public DirectExchange pedidos360Exchange() {
 		return new DirectExchange(EXCHANGE_NAME, true, false);
@@ -41,6 +61,11 @@ public class RabbitMQConfig {
 	@Bean
 	public DirectExchange pedidos360DeadLetterExchange() {
 		return new DirectExchange(DLX_NAME, true, false);
+	}
+
+	@Bean
+	public TopicExchange pedidos360TopicExchange() {
+		return new TopicExchange(TOPIC_EXCHANGE_NAME, true, false);
 	}
 
 	@Bean
@@ -68,6 +93,61 @@ public class RabbitMQConfig {
 	public Queue productosErroresDlq() {
 		return QueueBuilder.durable(PRODUCTOS_ERRORES_DLQ).build();
 	}
+
+	// --- EP3: colas principales + DLQ por dominio ---
+
+	@Bean
+	public Queue productosCola() {
+		return QueueBuilder.durable(PRODUCTOS_COLA)
+				.deadLetterExchange(DLX_NAME)
+				.deadLetterRoutingKey(PRODUCTOS_COLA_DLQ_ROUTING_KEY)
+				.build();
+	}
+
+	@Bean
+	public Queue productosColaDlq() {
+		return QueueBuilder.durable(PRODUCTOS_COLA_DLQ).build();
+	}
+
+	@Bean
+	public Queue auditoriaCola() {
+		return QueueBuilder.durable(AUDITORIA_COLA)
+				.deadLetterExchange(DLX_NAME)
+				.deadLetterRoutingKey(AUDITORIA_COLA_DLQ_ROUTING_KEY)
+				.build();
+	}
+
+	@Bean
+	public Queue auditoriaColaDlq() {
+		return QueueBuilder.durable(AUDITORIA_COLA_DLQ).build();
+	}
+
+	// EP3: bindings al Topic Exchange.
+	@Bean
+	public Binding productosColaTopicBinding(TopicExchange pedidos360TopicExchange, Queue productosCola) {
+		return BindingBuilder.bind(productosCola).to(pedidos360TopicExchange).with(TOPIC_BINDING_PRODUCTOS);
+	}
+
+	@Bean
+	public Binding auditoriaColaTopicBinding(TopicExchange pedidos360TopicExchange, Queue auditoriaCola) {
+		return BindingBuilder.bind(auditoriaCola).to(pedidos360TopicExchange).with(TOPIC_BINDING_ALL);
+	}
+
+	@Bean
+	public Binding productosColaDlqBinding(DirectExchange pedidos360DeadLetterExchange, Queue productosColaDlq) {
+		return BindingBuilder.bind(productosColaDlq)
+				.to(pedidos360DeadLetterExchange)
+				.with(PRODUCTOS_COLA_DLQ_ROUTING_KEY);
+	}
+
+	@Bean
+	public Binding auditoriaColaDlqBinding(DirectExchange pedidos360DeadLetterExchange, Queue auditoriaColaDlq) {
+		return BindingBuilder.bind(auditoriaColaDlq)
+				.to(pedidos360DeadLetterExchange)
+				.with(AUDITORIA_COLA_DLQ_ROUTING_KEY);
+	}
+
+	// --- bindings existentes ---
 
 	@Bean
 	public Binding productoCreadoBinding(DirectExchange pedidos360Exchange, Queue productosEventosQueue) {
