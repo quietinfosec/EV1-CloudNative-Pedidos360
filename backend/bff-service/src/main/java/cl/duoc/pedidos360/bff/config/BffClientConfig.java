@@ -17,6 +17,12 @@ public class BffClientConfig {
 	@Value("${pedidos-service.url:http://localhost:8081}")
 	private String pedidosServiceUrl;
 
+	private final BearerTokenPropagationInterceptor bearerTokenPropagationInterceptor;
+
+	public BffClientConfig(BearerTokenPropagationInterceptor bearerTokenPropagationInterceptor) {
+		this.bearerTokenPropagationInterceptor = bearerTokenPropagationInterceptor;
+	}
+
 	private SimpleClientHttpRequestFactory createRequestFactory() {
 		SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
 		factory.setConnectTimeout((int) Duration.ofSeconds(3).toMillis());
@@ -29,6 +35,7 @@ public class BffClientConfig {
 		return RestClient.builder()
 				.baseUrl(productosServiceUrl)
 				.requestFactory(createRequestFactory())
+				.requestInterceptor(bearerTokenPropagationInterceptor)
 				.build();
 	}
 
@@ -37,6 +44,7 @@ public class BffClientConfig {
 		return RestClient.builder()
 				.baseUrl(pedidosServiceUrl)
 				.requestFactory(createRequestFactory())
+				.requestInterceptor(bearerTokenPropagationInterceptor)
 				.build();
 	}
 

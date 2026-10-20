@@ -31,6 +31,7 @@ import cl.duoc.pedidos360.productos.exception.ResourceNotFoundException;
 import cl.duoc.pedidos360.productos.service.ProductoService;
 
 @WebMvcTest(ProductoController.class)
+@org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc(addFilters = false)
 class ProductoControllerTests {
 
 	@Autowired

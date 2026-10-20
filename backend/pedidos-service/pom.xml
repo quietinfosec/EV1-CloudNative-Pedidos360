@@ -15,6 +15,10 @@
 	<description>Microservicio de Pedidos - Pedidos360</description>
 	<properties>
 		<java.version>21</java.version>
+		<!-- EP3 (Fase 7): los tests @Tag("postgres") exigen el contenedor
+		     pedidos360-postgres y no deben correr en la suite estandar. Para
+		     ejecutarlos: -Dsurefire.excludedGroups= -Dgroups=postgres -->
+		<surefire.excludedGroups>postgres</surefire.excludedGroups>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -50,7 +54,26 @@
 		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-security</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.security</groupId>
+			<artifactId>spring-security-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-amqp</artifactId>
+		</dependency>
+		<!-- EP3 (4.4): adaptador SQS/ElasticMQ -->
+		<dependency>
+			<groupId>software.amazon.awssdk</groupId>
+			<artifactId>sqs</artifactId>
+			<version>2.31.26</version>
 		</dependency>
 	</dependencies>
 	<build>
@@ -58,6 +81,13 @@
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-surefire-plugin</artifactId>
+				<configuration>
+					<excludedGroups>${surefire.excludedGroups}</excludedGroups>
+				</configuration>
 			</plugin>
 		</plugins>
 	</build>

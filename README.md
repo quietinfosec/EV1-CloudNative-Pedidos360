@@ -1,9 +1,11 @@
 # 📦 Pedidos360 — Plataforma Cloud Native
 
-> **Evaluación Parcial 1 — Desarrollo Cloud Native I (DSY1107)**  
+> **Desarrollo Cloud Native I (DSY1107) — Evaluaciones Parciales 1, 2 y 3**  
 > **Institución:** Duoc UC — Escuela de Informática y Telecomunicaciones  
 > **Infraestructura Cloud:** Amazon Web Services (AWS) — Región `us-east-1`  
 > **Proveedor de Identidad (IdaaS):** Microsoft Entra ID (Azure AD)  
+> **Mensajería (EP3):** RabbitMQ (Topic Exchange, 3 colas de dominio, DLQ) + adaptador SQS/ElasticMQ  
+> **Rama EP3:** `ep3-rabbitmq`
 
 ---
 
@@ -43,7 +45,7 @@
 flowchart TD
     subgraph Client ["Capa Cliente / Frontend"]
         User(["👤 Usuario / Navegador"])
-        Angular["🌐 Angular 19 (SPA)<br/>MSAL Angular + Router<br/>(Local :4200 / S3 + CloudFront)"]
+        Angular["🌐 Angular 22 (SPA)<br/>MSAL Angular + Router<br/>(Local :4200 / S3 + CloudFront)"]
         EntraID["🔐 Microsoft Entra ID (Azure AD)<br/>OAuth2 / OpenID Connect Issuer"]
     end
 
@@ -80,13 +82,16 @@ flowchart TD
 
 | Componente | Tecnología | Puerto | Visibilidad | Responsabilidad Principal |
 |---|---|---|---|---|
-| **Frontend Web** | Angular 19 + MSAL | `4200` (dev) / `443` (prod) | Pública | Interfaz de usuario reactiva, login Entra ID, interceptor JWT |
+| **Frontend Web** | Angular 22 + MSAL | `4200` (dev) / `443` (prod) | Pública | Interfaz de usuario reactiva, login Entra ID, interceptor JWT |
 | **API Gateway** | AWS API Gateway v2 | `443` (HTTPS) | Pública | Fachada pública gestionada, gestión de CORS y enrutamiento proxy |
 | **Internal ALB** | AWS Application Load Balancer | `80` (HTTP) | Privada VPC | Balanceo y reenvío de tráfico interno hacia el BFF |
 | **BFF Service** | Spring Boot 3.3.4 | `8080` (`0.0.0.0`) | Privada VPC | Resource Server JWT, agregación y comunicación con microservicios |
 | **Pedidos Service** | Spring Boot 3.3.4 + JPA | `8081` (`127.0.0.1`) | Loopback EC2 | Gestión de órdenes de compra y ciclo de vida de pedidos |
 | **Productos Service** | Spring Boot 3.3.4 + JPA | `8082` (`127.0.0.1`) | Loopback EC2 | Catálogo de productos, control de stock y borrado lógico |
+| **RabbitMQ Admin Service** | Spring Boot 3.3.4 | `8083` (`127.0.0.1`) | Loopback EC2 | Observabilidad read-only del broker (colas, exchanges, bindings, DLQ) |
 | **Base de Datos** | Amazon RDS PostgreSQL 16.3 | `5432` | Privada VPC | Persistencia relacional de productos y pedidos |
+
+> **Mensajería (EP3).** Exchange direct `pedidos360.direct.exchange` (comandos/errores) + topic `pedidos360.topic.exchange` (eventos de dominio); colas durables `pedidos360.{pedidos,productos,auditoria}.cola` con DLQ por dominio vía `pedidos360.dlx`. Adaptador alterno SQS/ElasticMQ seleccionable con `MESSAGING_PROVIDER`. Detalle en [`docs/ep3/03-plan-de-implementacion.md`](docs/ep3/03-plan-de-implementacion.md).
 
 ---
 
@@ -236,7 +241,7 @@ flowchart LR
 
 ## 8. Frontend Angular (SPA)
 
-Desarrollado con **Angular 19** utilizando componentes **standalone** y soporte modular:
+Desarrollado con **Angular 22** utilizando componentes **standalone** y soporte modular:
 - **Vistas implementadas:**
   - `/home`: Panel de bienvenida y estado general de la plataforma.
   - `/login`: Formulario de autenticación federada con botón interactivo de Microsoft Entra ID.
@@ -286,23 +291,33 @@ GET    /actuator/health             -> {"status": "UP"}
 
 ### 10.2 Ejecución Local del Backend
 ```bash
-# Terminal 0: RabbitMQ local (necesario para pedidos y productos)
-docker compose up -d rabbitmq
+# Terminal 0: Infraestructura local (RabbitMQ + PostgreSQL + ElasticMQ)
+docker compose up -d
 
 # Terminal 1: BFF Service (:8080)
 cd backend/bff-service
 ./mvnw spring-boot:run
 
-# Terminal 2: Pedidos Service (:8081)
+# Terminal 2: Pedidos Service (:8081)  [perfil local]
 cd backend/pedidos-service
 ./mvnw spring-boot:run
 
-# Terminal 3: Productos Service (:8082)
+# Terminal 3: Productos Service (:8082)  [perfil local]
 cd backend/productos-service
+./mvnw spring-boot:run
+
+# Terminal 4 (opcional): RabbitMQ Admin Service (:8083)  [observabilidad]
+cd backend/rabbitmq-admin-service
 ./mvnw spring-boot:run
 ```
 
+> En Windows puede usar `.\scripts\run-local.ps1` para levantar los tres servicios
+> principales en perfil `local`. La infraestructura local la provee
+> [`docker-compose.yml`](docker-compose.yml): RabbitMQ, PostgreSQL (publicado en
+> `127.0.0.1:55432` para convivir con un PostgreSQL nativo) y ElasticMQ.
+>
 > Management UI de RabbitMQ: <http://localhost:15672> (`guest` / `guest`, solo loopback).
+> Admin Service: <http://localhost:8083/admin/queues> (requiere `ROLE_ADMIN`).
 
 ### 10.3 Ejecución del Frontend
 ```bash
@@ -322,18 +337,30 @@ powershell -ExecutionPolicy Bypass -File scripts/build-all.ps1
 
 ## 11. Pruebas Automatizadas y Calidad de Código
 
-El proyecto cuenta con **115 pruebas automatizadas** en el backend ejecutadas con **100% de éxito (0 fallos)**:
+El proyecto cuenta con **166 pruebas backend ejecutadas con 0 fallos** (perfil de mensajería RabbitMQ, por defecto):
 
 | Módulo | Tests | Estado | Cobertura Principal |
 |---|---|---|---|
-| `bff-service` | **18** | ✅ PASS | Orquestación REST, Spring Security JWT, 401 Unauthorized, health endpoints |
-| `pedidos-service` | **49** | ✅ PASS | CRUD Pedido, eventos RabbitMQ (publisher, AFTER_COMMIT, consumer, retry, DLQ), rollback sin evento |
-| `productos-service` | **48** | ✅ PASS | CRUD Producto, borrado lógico, eventos RabbitMQ (publisher, AFTER_COMMIT, consumer, retry, DLQ) |
+| `bff-service` | **21** | ✅ PASS | Orquestación REST, Spring Security JWT, 401 Unauthorized, health endpoints |
+| `pedidos-service` | **65** | ✅ PASS | CRUD Pedido, eventos RabbitMQ (publisher, AFTER_COMMIT, consumer, retry, DLQ), topic routing, persistencia PostgreSQL |
+| `productos-service` | **65** | ✅ PASS | CRUD Producto, borrado lógico, eventos RabbitMQ (publisher, AFTER_COMMIT, consumer, retry, DLQ), topic routing |
+| `rabbitmq-admin-service` | **15** | ✅ PASS | Observabilidad broker (colas, exchanges, bindings, DLQ), seguridad `ROLE_ADMIN`, 502 broker caído |
 | **Frontend Web** | Build OK | ✅ PASS | Compilación de producción (`ng build`) sin errores |
 
-> Las suites de `pedidos-service` y `productos-service` requieren el broker
-> RabbitMQ local levantado (`docker compose up -d rabbitmq`). Detalle en
-> [`docs/testing.md`](docs/testing.md) y [`docs/rabbitmq-local.md`](docs/rabbitmq-local.md).
+**Suites adicionales (evidencia EP3):**
+
+| Suite | Tests | Estado | Nota |
+|---|---|---|---|
+| `pedidos-service` (SQS) | **65** | ✅ PASS | `MESSAGING_PROVIDER=sqs` contra ElasticMQ |
+| `productos-service` (SQS) | **65** | ✅ PASS | `MESSAGING_PROVIDER=sqs` contra ElasticMQ |
+| PostgreSQL real (`@Tag("postgres")`) | **1 + 1** | ✅ PASS | Round-trip contra PostgreSQL en `127.0.0.1:55432` |
+
+> Las suites de `pedidos-service` y `productos-service` requieren la infraestructura
+> local levantada (`docker compose up -d`). **Ejecútelas de forma secuencial**: comparten
+> el broker RabbitMQ y la cola de auditoría (`#`), por lo que correrlas en paralelo
+> contamina los mensajes. En Windows, configure `JAVA_HOME` a JDK 21 antes de ejecutar el wrapper.
+> Detalle en [`docs/ep3/05-pruebas-integracion.md`](docs/ep3/05-pruebas-integracion.md) y
+> [`docs/ep3/06-evidencias-rubrica.md`](docs/ep3/06-evidencias-rubrica.md).
 
 ### 11.1 Hashes de Integridad SHA256 de los Artefactos
 ```text
@@ -354,18 +381,21 @@ productos-service.jar:
 ```text
 Pedidos360/
 ├── frontend/
-│   └── pedidos360-web/        # Aplicación Angular 19 SPA con MSAL
+│   └── pedidos360-web/        # Aplicación Angular 22 SPA con MSAL
 ├── backend/
 │   ├── bff-service/           # Orquestador BFF + Spring Security JWT (:8080)
 │   ├── pedidos-service/       # Microservicio Pedidos + JPA (:8081)
-│   └── productos-service/     # Microservicio Productos + JPA (:8082)
-├── infra/aws/
-│   ├── api-gateway/           # Documentación y plan HTTP API v2
-│   ├── ec2/                   # Unidades systemd y variables de entorno
-│   ├── iam/                   # Políticas IAM y documentación de roles
-│   ├── network/               # Security Groups y arquitectura de red
-│   └── rds/                   # Documentación y plan de Amazon RDS PostgreSQL
-├── scripts/                   # Scripts PowerShell y Bash de build y deploy
+│   ├── productos-service/     # Microservicio Productos + JPA (:8082)
+│   └── rabbitmq-admin-service/ # Observabilidad RabbitMQ read-only (:8083)
+├── infra/
+│   ├── aws/
+│   │   ├── api-gateway/       # Documentación y plan HTTP API v2
+│   │   ├── ec2/               # Unidades systemd y variables de entorno
+│   │   ├── iam/               # Políticas IAM y documentación de roles
+│   │   ├── network/           # Security Groups y arquitectura de red
+│   │   └── rds/               # Documentación y plan de Amazon RDS PostgreSQL
+│   └── elasticmq/             # Configuración local del broker SQS-compatible
+├── scripts/                   # Scripts PowerShell y Bash de build, run y RabbitMQ
 ├── docs/                      # Manuales técnicos detallados
 │   ├── architecture.md        # Arquitectura y flujos de datos
 │   ├── database.md            # Modelo de persistencia y entidades
@@ -373,7 +403,16 @@ Pedidos360/
 │   ├── authentication.md      # Microsoft Entra ID y seguridad JWT
 │   ├── testing.md             # Guía de pruebas automatizadas
 │   ├── backend-deployment-aws.md # Evidencia de despliegue EC2
-│   └── INFORME_PEDIDOS360.pdf # Informe técnico completo en PDF
+│   └── ep3/                   # Entregables EP3 (01..08)
+│       ├── 01-auditoria-inicial.md
+│       ├── 02-arquitectura-objetivo.md
+│       ├── 03-plan-de-implementacion.md
+│       ├── 04-consolidacion-implementacion.md
+│       ├── 05-pruebas-integracion.md
+│       ├── 06-evidencias-rubrica.md
+│       ├── 07-guion-presentacion.md
+│       └── 08-checklist-entrega.md
+├── docker-compose.yml         # RabbitMQ + PostgreSQL (:55432) + ElasticMQ
 ├── dist/                      # Artefactos .jar y compilados (no versionado)
 └── .env.example               # Plantilla de variables de entorno sanitizada
 ```

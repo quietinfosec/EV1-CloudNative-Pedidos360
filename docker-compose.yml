@@ -16,6 +16,42 @@
 # =============================================================================
 
 services:
+  # ---------------------------------------------------------------------------
+  # PostgreSQL local (EP3): aporta el datasource del perfil "local" en paridad
+  # con Amazon RDS del perfil "aws". Misma base que consumen pedidos-service y
+  # productos-service (spring.datasource.url = jdbc:postgresql://localhost:55432/pedidos360
+  # con DB_PORT=55432; por defecto el host 55432 evita chocar con un PostgreSQL nativo en 5432).
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: pedidos360-postgres
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: ${DB_NAME:-pedidos360}
+      POSTGRES_USER: ${DB_USERNAME:-dbadmin}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-dbadmin}
+
+    ports:
+      # 55432 -> PostgreSQL en el host, solo loopback. Se usa 55432 (no 5432)
+      # para convivir con una instalacion nativa de PostgreSQL que pueda estar
+      # escuchando ya en 5432. Los servicios se conectan al contenedor con
+      # DB_PORT=55432 (spring.datasource.url = jdbc:postgresql://localhost:55432/pedidos360).
+      - "127.0.0.1:55432:5432"
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+    networks:
+      - pedidos360-network
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-dbadmin} -d ${DB_NAME:-pedidos360}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
   rabbitmq:
     image: rabbitmq:4.2-management
     container_name: pedidos360-rabbitmq
@@ -54,6 +90,33 @@ services:
       retries: 5
       start_period: 10s
 
+  # ---------------------------------------------------------------------------
+  # ElasticMQ (EP3 - 4.4): broker compatible con AWS SQS para verificar el
+  # adaptador SqsEventPublisher en local (messaging.provider=sqs).
+  # La cola "pedidos360-eventos" se declara en elasticmq.conf.
+  # ---------------------------------------------------------------------------
+  elasticmq:
+    image: softwaremill/elasticmq-native:1.6.11
+    container_name: pedidos360-elasticmq
+    restart: unless-stopped
+
+    ports:
+      # 9324 -> endpoint SQS-compatible (solo loopback)
+      - "127.0.0.1:9324:9324"
+
+    volumes:
+      - ./infra/elasticmq/elasticmq.conf:/opt/elasticmq.conf
+
+    networks:
+      - pedidos360-network
+
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:9324/?Action=ListQueues || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
 networks:
   pedidos360-network:
     name: pedidos360-network
@@ -62,3 +125,5 @@ networks:
 volumes:
   rabbitmq_data:
     name: rabbitmq_data
+  postgres_data:
+    name: postgres_data
