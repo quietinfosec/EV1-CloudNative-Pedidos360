@@ -19,7 +19,8 @@ services:
   # ---------------------------------------------------------------------------
   # PostgreSQL local (EP3): aporta el datasource del perfil "local" en paridad
   # con Amazon RDS del perfil "aws". Misma base que consumen pedidos-service y
-  # productos-service (spring.datasource.url = jdbc:postgresql://localhost:5432/pedidos360).
+  # productos-service (spring.datasource.url = jdbc:postgresql://localhost:55432/pedidos360
+  # con DB_PORT=55432; por defecto el host 55432 evita chocar con un PostgreSQL nativo en 5432).
   # ---------------------------------------------------------------------------
   postgres:
     image: postgres:16-alpine
@@ -32,8 +33,11 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD:-dbadmin}
 
     ports:
-      # 5432 -> PostgreSQL (solo loopback, no exponer en red)
-      - "127.0.0.1:5432:5432"
+      # 55432 -> PostgreSQL en el host, solo loopback. Se usa 55432 (no 5432)
+      # para convivir con una instalacion nativa de PostgreSQL que pueda estar
+      # escuchando ya en 5432. Los servicios se conectan al contenedor con
+      # DB_PORT=55432 (spring.datasource.url = jdbc:postgresql://localhost:55432/pedidos360).
+      - "127.0.0.1:55432:5432"
 
     volumes:
       - postgres_data:/var/lib/postgresql/data
