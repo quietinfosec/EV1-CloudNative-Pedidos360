@@ -1,14 +1,19 @@
 # RabbitMQ local
 
-Infraestructura local del broker RabbitMQ para Pedidos360, levantada con Docker
-Compose. Esta fase instala **unicamente el broker**: los microservicios Spring
-Boot (`bff-service`, `pedidos-service`, `productos-service`) siguen ejecutándose
-exactamente igual que hoy, desde el host, sin contenedores.
+Infraestructura local del **clúster RabbitMQ de 2 nodos** para Pedidos360,
+levantada con Docker Compose. Los microservicios Spring Boot (`bff-service`,
+`pedidos-service`, `productos-service`, `rabbitmq-admin-service`) siguen
+ejecutándose desde el host, sin contenedores.
 
-La **topología** (exchange, colas, bindings, routing keys) **no** se declara en
-Docker: se declara desde Spring Boot mediante `RabbitMQConfig`, para no
-mantener definiciones duplicadas entre `definitions.json` y el código Java.
-DLQ, producers y consumers se declararán en fases posteriores.
+La **topología** (exchange, colas, bindings, routing keys, DLX/DLQ) **no** se
+declara en Docker: se declara desde Spring Boot mediante `RabbitMQConfig`, para
+no mantener definiciones duplicadas entre `definitions.json` y el código Java.
+
+> **Actualización 2026-10-24:** el broker local es un clúster de 2 nodos
+> (`pedidos360-rabbitmq` y `pedidos360-rabbitmq2`) formado por un contenedor
+> efímero `rabbitmq2-join`. Los comandos de una sola instancia que aparezcan más
+> abajo deben leerse sobre el nodo 1; el estado del clúster se valida con
+> `.\scripts\rabbitmq-status.ps1`.
 
 ## Requisitos
 
@@ -24,18 +29,18 @@ docker compose version
 ## Levantar
 
 ```bash
-docker compose up -d rabbitmq
+.\scripts\rabbitmq-up.ps1          # Windows PowerShell (recomendado)
 ```
 
-O mediante los scripts del repositorio:
+El script valida `docker-compose.yml`, levanta ambos nodos, espera los
+healthchecks, ejecuta el join idempotente y verifica `cluster_status`.
+
+Equivalente manual:
 
 ```bash
-./scripts/rabbitmq-up.sh          # Linux / macOS
-.\scripts\rabbitmq-up.ps1          # Windows PowerShell
+docker compose up -d rabbitmq rabbitmq2
+docker compose up -d --force-recreate rabbitmq2-join
 ```
-
-El script `rabbitmq-up` valida `docker-compose.yml`, levanta el contenedor y
-espera a que el healthcheck reporte `healthy`.
 
 ## Estado
 
@@ -46,12 +51,11 @@ docker compose ps
 O:
 
 ```bash
-./scripts/rabbitmq-status.sh
 .\scripts\rabbitmq-status.ps1
 ```
 
-Ambos devuelven **código de salida 1** si el contenedor no existe, no está
-`healthy` o el diagnóstico interno falla.
+Devuelve **código de salida 1** si un nodo no existe, no está `healthy`, el
+diagnóstico interno falla o el nodo 2 no aparece en `cluster_status`.
 
 ## Diagnóstico
 
@@ -67,17 +71,19 @@ Ping succeeded
 
 ## Management UI
 
-<http://localhost:15672>
+- Nodo 1: <http://localhost:15672>
+- Nodo 2: <http://localhost:15673>
 
 El plugin de management viene incluido en la imagen `rabbitmq:4.2-management`.
 
-La interfaz está publicada **solo en loopback** (`127.0.0.1:15672`), por lo que
-no es accesible desde otros equipos de la red local.
+Las interfaces están publicadas **solo en loopback**, por lo que no son
+accesibles desde otros equipos de la red local.
 
 ## AMQP
 
 ```text
-localhost:5672
+Nodo 1: localhost:5672
+Nodo 2: localhost:5673
 ```
 
 Desde Spring Boot (perfil `local`) la futura configuración usará:
@@ -359,51 +365,45 @@ en esta fase.
 
 ## Consumers
 
-`PedidoEventConsumer` escucha:
+Consumidores vigentes:
 
-- `pedidos.eventos.queue` en nivel INFO;
-- `pedidos.errores.queue` en nivel WARN.
-
-`ProductoEventConsumer` escucha:
-
-- `productos.eventos.queue` en nivel INFO;
-- `productos.errores.queue` en nivel WARN.
+- `PedidosColaConsumer` escucha `pedidos360.pedidos.cola`.
+- `ProductosColaConsumer` escucha `pedidos360.productos.cola`.
+- `AuditoriaEventConsumer` escucha `pedidos360.auditoria.cola`.
+- `PedidoEventConsumer` escucha `pedidos.eventos.queue` (INFO) y `pedidos.errores.queue` (WARN).
+- `ProductoEventConsumer` escucha `productos.eventos.queue` (INFO) y `productos.errores.queue` (WARN).
 
 Los consumers validan `eventId`, `eventType` y el ID de la entidad. Son
-exclusivamente observacionales: no llaman repositories, no cambian stock ni
-modifican la base de datos.
+observacionales: no llaman repositories, no cambian stock ni modifican la base
+de datos.
 
-El modo de confirmación es `AUTO` de Spring AMQP. No es `autoAck=true` del
-protocolo: el mensaje se confirma únicamente si el método listener termina sin
-excepción.
+El modo de confirmación es **manual** (`acknowledge-mode=manual`). Cada listener
+delega en `ManualAckRabbitHandler`, que hace `basicAck` si la acción termina bien
+y `basicNack(requeue=false)` si se agotan los reintentos.
 
 ```text
 Message
-   ↓
-Consumer
-   ↓
-OK → ACK automático → mensaje removido
+   │
+ManualAckRabbitHandler → 3 intentos con RetryTemplate
+   │
+OK → basicAck → mensaje removido
+Fallo → basicNack(requeue=false) → DLX → DLQ
 ```
 
 ## Retry
 
-Los listeners usan retry stateless con la siguiente configuración:
+El retry vive en el consumidor, no en el listener de Spring AMQP:
 
 ```properties
-spring.rabbitmq.listener.simple.retry.enabled=true
-spring.rabbitmq.listener.simple.retry.max-attempts=3
-spring.rabbitmq.listener.simple.retry.initial-interval=1000
-spring.rabbitmq.listener.simple.retry.multiplier=2.0
-spring.rabbitmq.listener.simple.retry.max-interval=5000
+spring.rabbitmq.listener.simple.acknowledge-mode=manual
+spring.rabbitmq.listener.simple.retry.enabled=false
 spring.rabbitmq.listener.simple.default-requeue-rejected=false
-spring.rabbitmq.listener.simple.acknowledge-mode=auto
-spring.rabbitmq.listener.simple.concurrency=1
-spring.rabbitmq.listener.simple.max-concurrency=3
-spring.rabbitmq.listener.simple.prefetch=1
 ```
 
-`max-attempts=3` incluye la ejecución inicial. Al agotarse los tres intentos,
-el mensaje se rechaza sin requeue, evitando ciclos infinitos.
+`ManualAckRabbitHandler` ejecuta la acción dentro de un `RetryTemplate` con
+`SimpleRetryPolicy(3)` y `FixedBackOffPolicy(500 ms)`. Los tres intentos incluyen
+la ejecución inicial; al agotarse, el mensaje se rechaza sin requeue, evitando
+ciclos infinitos.
 
 ## Dead Letter Queue
 
@@ -415,6 +415,9 @@ El exchange común de dead-letter es:
 
 | Queue original | DLQ | Routing key DLQ |
 |---|---|---|
+| `pedidos360.pedidos.cola` | `pedidos360.pedidos.dlq` | `pedidos360.pedidos.dlq` |
+| `pedidos360.productos.cola` | `pedidos360.productos.dlq` | `pedidos360.productos.dlq` |
+| `pedidos360.auditoria.cola` | `pedidos360.auditoria.dlq` | `pedidos360.auditoria.dlq` |
 | `pedidos.eventos.queue` | `pedidos.eventos.dlq` | `pedidos.eventos.dlq` |
 | `pedidos.errores.queue` | `pedidos.errores.dlq` | `pedidos.errores.dlq` |
 | `productos.eventos.queue` | `productos.eventos.dlq` | `productos.eventos.dlq` |
@@ -459,7 +462,7 @@ en AWS ni sobre queues con mensajes.
 4. Las DLQ no tienen consumer.
 5. No existe replay automático desde DLQ.
 6. No existe Transactional Outbox.
-7. No existe ACK/NACK manual; esta fase utiliza `AUTO`.
+7. El reproceso de DLQ es manual (inspección y reencolado desde el panel admin), no automático.
 
 ## Arquitectura resumida
 
@@ -560,16 +563,17 @@ cd backend/productos-service && ./mvnw -Dtest=ProductoConsumerRabbitIntegrationT
 | JSON | SI |
 | AFTER_COMMIT | SI |
 | Consumers | SI |
-| ACK AUTO | SI |
-| Retry | SI |
+| Manual ACK/NACK | SI |
+| Retry (`RetryTemplate`) | SI |
 | DLX | SI |
 | DLQ | SI |
-| Manual ACK | NO |
+| Topic Exchange | SI |
+| Clúster 2 nodos | SI |
 | Idempotencia persistente | NO |
 | Transactional Outbox | NO |
-| Replay DLQ | NO |
+| Replay DLQ automático | NO |
 
-Manual ACK, idempotencia persistente, Transactional Outbox y replay de DLQ
+Idempotencia persistente, Transactional Outbox y replay automático de DLQ
 **no forman parte del alcance actual** de esta actividad.
 
 ## Evidencias para evaluación
@@ -606,9 +610,10 @@ Qué persiste y qué no:
 
 | Elemento | Persiste tras `down`/`up` |
 |---|---|
-| Exchanges `pedidos360.direct.exchange` y `pedidos360.dlx` | SI (durable, volumen) |
-| 4 colas productivas y 4 DLQ con sus argumentos | SI (durable, volumen) |
-| 12 bindings | SI |
+| Exchanges `pedidos360.direct.exchange`, `pedidos360.topic.exchange` y `pedidos360.dlx` | SI (durable, volumen) |
+| Colas objetivo `pedidos360.{pedidos,productos,auditoria}.cola` + `.dlq` | SI (durable, volumen) |
+| Colas legacy `*.eventos.queue` / `*.errores.queue` + sus DLQ | SI (durable, volumen) |
+| Bindings (direct, topic y DLX) | SI |
 | Mensajes encolados | SI |
 | Topología ausente | Spring la recrea al iniciar el contexto |
 
@@ -622,7 +627,7 @@ docker compose up -d rabbitmq
 docker exec pedidos360-rabbitmq rabbitmq-diagnostics ping
 → Ping succeeded
 
-2 exchanges, 8 queues, 12 bindings presentes SIN ejecutar Spring
+Topología completa presente SIN ejecutar Spring (exchanges direct/topic/DLX, colas objetivo y legacy)
 ```
 
 ## Idempotencia
@@ -634,7 +639,7 @@ mutaciones de estado desde consumidores.
 ## Alcance
 
 **No** existen todavía: consumers de DLQ, replay automático, idempotencia
-persistente, ACK/NACK manual ni Transactional Outbox.
+persistente ni Transactional Outbox. El ACK/NACK manual ya está implementado.
 
 ## Estado actual de la integración
 
@@ -647,7 +652,10 @@ persistente, ACK/NACK manual ni Transactional Outbox.
 | `PedidoEvent` / `ProductoEvent` | **Creados** |
 | JSON `MessageConverter` / `RabbitTemplate` | **Configurados** |
 | Publishers | **Integrados AFTER_COMMIT** con pedidos y productos |
-| Consumers de eventos y errores | **Implementados**, observacionales |
-| Retry | **3 intentos**, backoff y sin requeue infinito |
-| DLQ | **4 DLQ durables**, sin consumer |
+| Consumers de eventos y errores | **Implementados**, observacionales, ACK/NACK manual |
+| Consumers de colas objetivo | `pedidos360.pedidos.cola`, `pedidos360.productos.cola`, `pedidos360.auditoria.cola` |
+| Retry | **3 intentos** con `RetryTemplate`, backoff fijo 500 ms y sin requeue infinito |
+| DLQ | DLQ durables por dominio; sin consumer automático |
+| Clúster | **2 nodos validados en vivo** (`cluster_status`, sin alarmas ni particiones) |
+| Panel admin | `rabbitmq-admin-service` con lectura, CRUD, purge y publicación |
 | API REST existente | **Sin cambios** |

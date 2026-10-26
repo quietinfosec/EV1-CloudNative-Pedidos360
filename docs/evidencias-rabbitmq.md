@@ -3,11 +3,16 @@
 Guía de presentación de la integración RabbitMQ de Pedidos360. Cada evidencia
 indica qué mostrar, el comando, qué debe verse y qué demuestra.
 
-Prerrequisito general: Java 21 y el broker local levantado.
+Prerrequisito general: Java 21 y el **clúster** local levantado.
 
-```bash
-docker compose up -d rabbitmq
+```powershell
+.\scripts\rabbitmq-up.ps1
 ```
+
+> **Actualización 2026-10-24:** las capturas y salidas de este documento son
+> evidencia histórica. El entorno actual usa 2 nodos (`5672/15672` y
+> `5673/15673`), ACK/NACK manual y admin service con CRUD. El estado vigente de
+> la rúbrica está en `docs/ep3/06-evidencias-rubrica.md`.
 
 ---
 
@@ -113,7 +118,7 @@ producto.error             -> productos.errores.queue
 
 ## Evidencia 6 — Queues productivas
 
-**Qué mostrar:** las 4 colas de trabajo.
+**Qué mostrar:** las colas objetivo de la topología nueva.
 
 **Comando:**
 
@@ -124,11 +129,14 @@ docker exec pedidos360-rabbitmq rabbitmqctl list_queues name durable messages
 **Debe verse:**
 
 ```text
-pedidos.eventos.queue     true
-pedidos.errores.queue     true
-productos.eventos.queue   true
-productos.errores.queue   true
+pedidos360.pedidos.cola      true
+pedidos360.productos.cola    true
+pedidos360.auditoria.cola    true
 ```
+
+Las colas legacy `pedidos.eventos.queue`, `pedidos.errores.queue`,
+`productos.eventos.queue` y `productos.errores.queue` siguen existiendo por
+compatibilidad y evidencia; no se eliminan.
 
 **Demuestra:** las colas de trabajo son durables y no efímeras.
 
@@ -136,7 +144,7 @@ productos.errores.queue   true
 
 ## Evidencia 7 — Dead Letter Exchange y DLQs
 
-**Qué mostrar:** el DLX y las 4 colas de mensajes fallidos.
+**Qué mostrar:** el DLX y las DLQ de dominio (incluidas las de las colas objetivo).
 
 **Comando:**
 
@@ -147,10 +155,13 @@ docker exec pedidos360-rabbitmq rabbitmqctl list_queues name durable
 **Debe verse:**
 
 ```text
-pedidos.eventos.dlq    true
-pedidos.errores.dlq    true
-productos.eventos.dlq  true
-productos.errores.dlq  true
+pedidos360.pedidos.dlq     true
+pedidos360.productos.dlq   true
+pedidos360.auditoria.dlq   true
+pedidos.eventos.dlq        true
+pedidos.errores.dlq        true
+productos.eventos.dlq      true
+productos.errores.dlq      true
 ```
 
 Para ver los argumentos dead-letter de las colas productivas, abrir en la UI la
@@ -306,9 +317,12 @@ cd backend/productos-service && ./mvnw clean package
 docker exec pedidos360-rabbitmq rabbitmqctl list_queues name messages consumers
 ```
 
-**Debe verse:** todas las colas con `messages = 0`.
+**Debe verse:** las colas objetivo y sus DLQ con `messages = 0`. Las colas
+legacy `*.eventos.queue` / `*.errores.queue` pueden conservar mensajes de
+evidencia de ejecuciones anteriores; **no se deben borrar**.
 
-**Demuestra:** no quedan mensajes de prueba en colas normales ni en DLQ.
+**Demuestra:** las colas de la topología nueva quedan drenadas y las DLQ no
+acumulan mensajes inesperados.
 
 ---
 

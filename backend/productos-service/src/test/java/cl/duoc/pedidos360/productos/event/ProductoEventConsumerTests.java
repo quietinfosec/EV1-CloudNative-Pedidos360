@@ -1,23 +1,44 @@
 package cl.duoc.pedidos360.productos.event;
 
-import static org.assertj.core.api.Assertions.assertThatCode;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
+import java.io.IOException;
 import java.math.BigDecimal;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.amqp.core.Message;
+import org.springframework.amqp.core.MessageProperties;
+import org.springframework.retry.backoff.FixedBackOffPolicy;
+import org.springframework.retry.policy.SimpleRetryPolicy;
+import org.springframework.retry.support.RetryTemplate;
+
+import com.rabbitmq.client.Channel;
 
 import cl.duoc.pedidos360.productos.config.RabbitMQConfig;
 
 class ProductoEventConsumerTests {
 
+	private static final long DELIVERY_TAG = 9L;
+
 	private ProductoEventConsumer consumer;
 	private ProductoEvent event;
+	private Channel channel;
+	private Message message;
 
 	@BeforeEach
 	void setUp() {
-		consumer = new ProductoEventConsumer();
+		RetryTemplate retryTemplate = new RetryTemplate();
+		retryTemplate.setRetryPolicy(new SimpleRetryPolicy(3));
+		FixedBackOffPolicy backOffPolicy = new FixedBackOffPolicy();
+		backOffPolicy.setBackOffPeriod(1L);
+		retryTemplate.setBackOffPolicy(backOffPolicy);
+
+		consumer = new ProductoEventConsumer(new ManualAckRabbitHandler(retryTemplate));
 		event = new ProductoEvent(
 				RabbitMQConfig.PRODUCTO_CREADO,
 				2001L,
@@ -26,35 +47,48 @@ class ProductoEventConsumerTests {
 				new BigDecimal("49990"),
 				null
 		);
+		channel = mock(Channel.class);
+		MessageProperties properties = new MessageProperties();
+		properties.setDeliveryTag(DELIVERY_TAG);
+		message = new Message(new byte[0], properties);
 	}
 
 	@Test
-	void shouldConsumeValidProductoEvent() {
-		assertThatCode(() -> consumer.consumeEvento(event)).doesNotThrowAnyException();
+	void shouldAckValidProductoEvent() throws IOException {
+		consumer.consumeEvento(event, message, channel);
+
+		verify(channel).basicAck(DELIVERY_TAG, false);
+		verify(channel, never()).basicNack(anyLong(), anyBoolean(), anyBoolean());
 	}
 
 	@Test
-	void shouldRejectProductoEventWithoutEventId() {
+	void shouldNackProductoEventWithoutEventId() throws IOException {
 		event.setEventId(null);
 
-		assertThatThrownBy(() -> consumer.consumeEvento(event))
-				.isInstanceOf(IllegalArgumentException.class);
+		consumer.consumeEvento(event, message, channel);
+
+		verify(channel).basicNack(DELIVERY_TAG, false, false);
+		verify(channel, never()).basicAck(anyLong(), anyBoolean());
 	}
 
 	@Test
-	void shouldRejectProductoEventWithBlankEventType() {
+	void shouldNackProductoEventWithBlankEventType() throws IOException {
 		event.setEventType(" ");
 
-		assertThatThrownBy(() -> consumer.consumeEvento(event))
-				.isInstanceOf(IllegalArgumentException.class);
+		consumer.consumeEvento(event, message, channel);
+
+		verify(channel).basicNack(DELIVERY_TAG, false, false);
+		verify(channel, never()).basicAck(anyLong(), anyBoolean());
 	}
 
 	@Test
-	void shouldRejectProductoEventWithoutProductoId() {
+	void shouldNackProductoEventWithoutProductoId() throws IOException {
 		event.setProductoId(null);
 
-		assertThatThrownBy(() -> consumer.consumeEvento(event))
-				.isInstanceOf(IllegalArgumentException.class);
+		consumer.consumeEvento(event, message, channel);
+
+		verify(channel).basicNack(DELIVERY_TAG, false, false);
+		verify(channel, never()).basicAck(anyLong(), anyBoolean());
 	}
 
 }

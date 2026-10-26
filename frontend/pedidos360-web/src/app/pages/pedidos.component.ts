@@ -1,7 +1,7 @@
 import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { MsalService } from '@azure/msal-angular';
+import { AuthService } from '../auth/auth.service';
 import { PedidoService } from '../services/pedido.service';
 import { Pedido, EstadoPedido } from '../models/models';
 
@@ -125,7 +125,7 @@ import { Pedido, EstadoPedido } from '../models/models';
 })
 export class PedidosComponent implements OnInit {
   private readonly pedidoService = inject(PedidoService);
-  private readonly msalService = inject(MsalService);
+  private readonly authService = inject(AuthService);
 
   pedidos: Pedido[] = [];
   cargando = true;
@@ -140,8 +140,7 @@ export class PedidosComponent implements OnInit {
   }
 
   getCurrentUser(): string {
-    const accounts = this.msalService.instance.getAllAccounts();
-    return accounts.length > 0 ? (accounts[0].username || accounts[0].name || 'usuario_demo') : 'usuario_demo';
+    return this.authService.getUsername() || 'usuario_demo';
   }
 
   cargarPedidos(): void {

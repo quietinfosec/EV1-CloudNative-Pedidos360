@@ -12,6 +12,12 @@ public record BindingSummary(
 		String destination,
 		@JsonProperty("destination_type") String destinationType,
 		@JsonProperty("routing_key") String routingKey,
-		String vhost
+		String vhost,
+		@JsonProperty("properties_key") String propertiesKey
 ) {
+
+	public BindingSummary(String source, String destination, String destinationType, String routingKey, String vhost) {
+		this(source, destination, destinationType, routingKey, vhost, null);
+	}
+
 }

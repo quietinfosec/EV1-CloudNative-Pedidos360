@@ -1,5 +1,8 @@
 package cl.duoc.pedidos360.bff.config;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -11,7 +14,12 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
+import org.springframework.security.oauth2.core.OAuth2TokenValidator;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtClaimValidator;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.web.SecurityFilterChain;
 
@@ -22,14 +30,31 @@ public class SecurityConfig {
 	@Value("${spring.security.oauth2.resourceserver.jwt.jwk-set-uri:}")
 	private String jwkSetUri;
 
+	@Value("${pedidos360.security.issuer-uri:}")
+	private String issuerUri;
+
+	@Value("${pedidos360.security.audience:}")
+	private String audience;
+
 	@Bean
 	@ConditionalOnMissingBean(JwtDecoder.class)
 	@ConditionalOnProperty(name = "spring.security.oauth2.resourceserver.jwt.jwk-set-uri")
 	public JwtDecoder jwtDecoder() {
-		if (jwkSetUri != null && !jwkSetUri.isBlank()) {
-			return NimbusJwtDecoder.withJwkSetUri(jwkSetUri).build();
+		if (jwkSetUri == null || jwkSetUri.isBlank()) {
+			return null;
 		}
-		return null;
+
+		NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSetUri(jwkSetUri).build();
+		List<OAuth2TokenValidator<Jwt>> validators = new ArrayList<>();
+		validators.add(issuerUri == null || issuerUri.isBlank()
+				? JwtValidators.createDefault()
+				: JwtValidators.createDefaultWithIssuer(issuerUri));
+		if (audience != null && !audience.isBlank()) {
+			validators.add(new JwtClaimValidator<List<String>>(
+					"aud", tokenAudience -> tokenAudience != null && tokenAudience.contains(audience)));
+		}
+		decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(validators));
+		return decoder;
 	}
 
 	@Bean

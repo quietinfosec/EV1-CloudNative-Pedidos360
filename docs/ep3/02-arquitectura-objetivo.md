@@ -5,7 +5,7 @@
 - **Basado en:** `docs/ep3/01-auditoria-inicial.md` (estado real verificado)
 - **Principio rector:** **migración incremental**. Se conserva todo lo funcional (115/115 tests verdes) y se **añade** lo que la rúbrica pide. No se reescribe ni se elimina código existente sin justificación.
 
-> **ESTADO FINAL (2026-10-20):** esta arquitectura objetivo fue **implementada y verificada**. Divergencias respecto a este diseño (patrón de binding específico `pedidos.pedido.#`, asimetría de adaptadores AMQP/SQS, ausencia de `MessageRecoverer` explícito, puerto PostgreSQL local `55432`) están documentadas en `04-consolidacion-implementacion.md`.
+> **ESTADO FINAL (2026-10-25):** esta arquitectura objetivo fue **implementada y verificada**. Divergencias respecto a este diseño (patrón de binding específico `pedidos.pedido.#`, asimetría de adaptadores AMQP/SQS, ausencia de `MessageRecoverer` explícito, puerto PostgreSQL local `55432`) están documentadas en `04-consolidacion-implementacion.md`. La identidad local se resolvió finalmente con **Keycloak 26.2 + oidc-client-ts** (Authorization Code/PKCE), manteniendo Entra ID como proveedor de producción.
 
 ---
 
@@ -14,8 +14,8 @@
 ```
                                    ┌─────────────────────────────────────────────┐
    Angular 22 (4200)  ──OIDC/JWT──▶│             bff-service (8080)              │
-   MSAL + angular-auth-oidc-client  │  API Gateway + BFF                          │
-                                   │  - Valida JWT (Entra ID / IDaaS)            │
+   oidc-client-ts (PKCE)            │  API Gateway + BFF                          │
+                                   │  - Valida JWT (Keycloak / Entra ID)         │
                                    │  - Propaga Bearer a servicios internos      │
                                    │  - RestClient + Resilience                  │
                                    └───────┬───────────────┬─────────────────────┘
@@ -131,12 +131,12 @@ Así se **conserva y se añade SQS** sin eliminar RabbitMQ, y la misma arquitect
 
 ## 4. Seguridad objetivo (JWT / IDaaS)
 
-- **Identidad:** Microsoft Entra ID (IDaaS) emite los JWT.
-- **Frontend:** MSAL Angular adquiere token y lo envía al BFF.
+- **Identidad:** Keycloak 26.2 en local y Microsoft Entra ID en producción emiten los JWT.
+- **Frontend:** `oidc-client-ts` adquiere el token con Authorization Code + PKCE y lo envía al BFF.
 - **BFF:** valida firma/expiración/audiencia y **propaga** el `Authorization: Bearer` a pedidos/productos/admin mediante un `ClientHttpRequestInterceptor`.
 - **Servicios internos:** configurados como **Resource Server** (validan el token propagado; rechazan 401 si falta).
 - **Autorización:** roles/scopes por endpoint (p. ej. `ADMIN` para `/admin/**`).
-- **Local:** perfil de seguridad permisivo **explícito** (no por accidente) para desarrollo sin Entra ID.
+- **Local:** Keycloak en `:8180` (perfil `local`); el perfil permisivo queda acotado a pruebas que lo requieren.
 
 ---
 
