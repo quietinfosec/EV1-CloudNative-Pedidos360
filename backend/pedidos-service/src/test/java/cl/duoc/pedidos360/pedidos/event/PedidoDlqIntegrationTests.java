@@ -2,6 +2,7 @@ package cl.duoc.pedidos360.pedidos.event;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.util.Properties;
 
@@ -20,6 +21,8 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.junit.jupiter.EnabledIf;
+
+import com.rabbitmq.client.Channel;
 
 import cl.duoc.pedidos360.pedidos.config.RabbitMQConfig;
 
@@ -114,8 +117,12 @@ class PedidoDlqIntegrationTests {
 	static class FailingPedidosConsumer {
 
 		@RabbitListener(id = "pedidos-dlq-test-listener", queues = RabbitMQConfig.PEDIDOS_COLA)
-		public void consume(PedidoEvent event) {
-			throw new IllegalStateException("Fallo intencional para forzar dead-letter de " + event.getPedidoId());
+		public void consume(PedidoEvent event, Message message, Channel channel) throws IOException {
+			try {
+				throw new IllegalStateException("Fallo intencional para forzar dead-letter de " + event.getPedidoId());
+			} catch (IllegalStateException ex) {
+				channel.basicNack(message.getMessageProperties().getDeliveryTag(), false, false);
+			}
 		}
 	}
 

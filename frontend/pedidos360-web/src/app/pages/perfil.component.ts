@@ -1,7 +1,7 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { MsalService } from '@azure/msal-angular';
-import { AccountInfo } from '@azure/msal-browser';
+import { User } from 'oidc-client-ts';
+import { AuthService } from '../auth/auth.service';
 
 @Component({
   selector: 'app-perfil',
@@ -10,50 +10,53 @@ import { AccountInfo } from '@azure/msal-browser';
   template: `
     <div class="container">
       <h2>Perfil de Usuario & Claims JWT</h2>
-      <p class="subtitle">Identidad federada provista por Microsoft Entra ID (Azure AD)</p>
+      <p class="subtitle">Identidad federada provista por el IDaaS (Keycloak local / Entra ID en producción)</p>
 
-      <div *ngIf="account; else noSession" class="profile-card">
-        <div class="user-header">
-          <div class="avatar">👤</div>
-          <div>
-            <h3>{{ account.name || 'Usuario' }}</h3>
-            <p class="email">{{ account.username }}</p>
+      <ng-container *ngIf="user$ | async as user; else noSession">
+        <div class="profile-card">
+          <div class="user-header">
+            <div class="avatar">ID</div>
+            <div>
+              <h3>{{ user.profile['name'] || 'Usuario' }}</h3>
+              <p class="email">{{ user.profile['preferred_username'] || user.profile['email'] }}</p>
+            </div>
+          </div>
+
+          <div class="section">
+            <h4>Detalles de la Cuenta</h4>
+            <table class="claims-table">
+              <tr><th>Issuer</th><td>{{ user.profile['iss'] }}</td></tr>
+              <tr><th>Subject</th><td>{{ user.profile['sub'] }}</td></tr>
+              <tr><th>Audiencia</th><td>{{ user.profile['aud'] }}</td></tr>
+              <tr><th>Expira</th><td>{{ user.expires_at | date:'medium' }}</td></tr>
+            </table>
+          </div>
+
+          <div class="section" *ngIf="user.profile">
+            <h4>Claims del Token</h4>
+            <table class="claims-table">
+              <tr *ngFor="let item of getClaimsList(user)">
+                <th>{{ item.key }}</th>
+                <td>{{ item.val | json }}</td>
+              </tr>
+            </table>
+          </div>
+
+          <div class="section">
+            <h4>Roles y Permisos Asignados</h4>
+            <div *ngIf="getRoles(user).length > 0; else noRoles" class="roles-tags">
+              <span class="tag" *ngFor="let role of getRoles(user)">{{ role }}</span>
+            </div>
+            <ng-template #noRoles>
+              <p class="text-muted">No hay roles específicos asignados en el token actual.</p>
+            </ng-template>
           </div>
         </div>
-
-        <div class="section">
-          <h4>Detalles de la Cuenta</h4>
-          <table class="claims-table">
-            <tr><th>Ambiente / Entorno</th><td>{{ account.environment }}</td></tr>
-            <tr><th>Tenant ID</th><td>{{ account.tenantId }}</td></tr>
-            <tr><th>Home Account ID</th><td>{{ account.homeAccountId }}</td></tr>
-          </table>
-        </div>
-
-        <div class="section" *ngIf="account.idTokenClaims">
-          <h4>Claims del Token de Identidad</h4>
-          <table class="claims-table">
-            <tr *ngFor="let item of getClaimsList()">
-              <th>{{ item.key }}</th>
-              <td>{{ item.val | json }}</td>
-            </tr>
-          </table>
-        </div>
-
-        <div class="section">
-          <h4>Roles y Permisos Asignados</h4>
-          <div *ngIf="getRoles().length > 0; else noRoles" class="roles-tags">
-            <span class="tag" *ngFor="let r of getRoles()">{{ r }}</span>
-          </div>
-          <ng-template #noRoles>
-            <p class="text-muted">No hay roles específicos asignados en el token actual.</p>
-          </ng-template>
-        </div>
-      </div>
+      </ng-container>
 
       <ng-template #noSession>
         <div class="no-session-card">
-          <p>No has iniciado sesión con Microsoft Entra ID.</p>
+          <p>No has iniciado sesión con el IDaaS.</p>
           <button class="btn btn-primary" (click)="login()">Iniciar Sesión Ahora</button>
         </div>
       </ng-template>
@@ -65,7 +68,7 @@ import { AccountInfo } from '@azure/msal-browser';
     .subtitle { color: #64748b; margin-bottom: 2rem; }
     .profile-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 2rem; box-shadow: 0 2px 4px rgba(0,0,0,0.03); }
     .user-header { display: flex; align-items: center; gap: 1.25rem; padding-bottom: 1.5rem; border-bottom: 1px solid #f1f5f9; margin-bottom: 1.5rem; }
-    .avatar { font-size: 3rem; background: #f0f9ff; padding: 0.5rem; border-radius: 50%; }
+    .avatar { display: flex; align-items: center; justify-content: center; width: 64px; height: 64px; border-radius: 50%; background: #e0f2fe; color: #0369a1; font-weight: 800; }
     .user-header h3 { margin: 0; color: #0f172a; font-size: 1.4rem; }
     .email { margin: 0.25rem 0 0; color: #64748b; }
     .section { margin-bottom: 2rem; }
@@ -83,30 +86,20 @@ import { AccountInfo } from '@azure/msal-browser';
     .btn-primary:hover { background: #0369a1; }
   `]
 })
-export class PerfilComponent implements OnInit {
-  private readonly msalService = inject(MsalService);
+export class PerfilComponent {
+  private readonly authService = inject(AuthService);
+  readonly user$ = this.authService.user$;
 
-  account: AccountInfo | null = null;
-
-  ngOnInit(): void {
-    const accounts = this.msalService.instance.getAllAccounts();
-    if (accounts.length > 0) {
-      this.account = accounts[0];
-    }
+  getClaimsList(user: User): Array<{ key: string; val: unknown }> {
+    return Object.entries(user.profile).map(([key, val]) => ({ key, val }));
   }
 
-  getClaimsList(): Array<{ key: string; val: any }> {
-    if (!this.account || !this.account.idTokenClaims) return [];
-    return Object.entries(this.account.idTokenClaims).map(([key, val]) => ({ key, val }));
-  }
-
-  getRoles(): string[] {
-    if (!this.account || !this.account.idTokenClaims) return [];
-    const roles = (this.account.idTokenClaims as any)['roles'];
-    return Array.isArray(roles) ? roles : [];
+  getRoles(user: User): string[] {
+    const roles = user.profile['roles'];
+    return Array.isArray(roles) ? roles.map(String) : [];
   }
 
   login(): void {
-    this.msalService.loginRedirect();
+    void this.authService.login();
   }
 }

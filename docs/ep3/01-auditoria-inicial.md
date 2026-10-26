@@ -7,7 +7,7 @@
 - **Repositorio auditado:** `quietinfosec/EV1-CloudNative-Pedidos360`
 - **Alcance:** reconocimiento del estado real del código, sin modificarlo.
 
-> **ESTADO FINAL (2026-10-20):** este documento es la **fotografía inicial** (previo a la implementación). Todas las brechas aquí listadas fueron cerradas en la consolidación. Ver `04-consolidacion-implementacion.md`, `05-pruebas-integracion.md` y `06-evidencias-rubrica.md` (rúbrica final **15/15 Cumple**). Las cifras de tests de este doc (115/115) corresponden a la línea base; las finales son 21/65/65/15 (rabbit).
+> **ESTADO FINAL (2026-10-25):** este documento es la **fotografía inicial** (previo a la implementación). Todas las brechas aquí listadas fueron cerradas en la consolidación. Ver `04-consolidacion-implementacion.md`, `05-pruebas-integracion.md` y `06-evidencias-rubrica.md` (rúbrica final **15/15 Cumple**). Las cifras de tests de este doc (115/115) corresponden a la línea base; las finales son **22/28/69/69** (BFF, admin, pedidos, productos), con clúster de 2 nodos validado en vivo, DLQ E2E y OIDC local con Keycloak. Las menciones a MSAL en este documento describen el estado inicial; el frontend final usa `oidc-client-ts`.
 
 > **Nota de alcance (importante).** La pauta EP3 describe el proyecto "MiniPedidos" (Java 17, Spring Boot 4.1.1, RabbitMQ 4, Amazon SQS, ElasticMQ). El repositorio real **no se llama MiniPedidos** y **no es una copia de esa descripción**. Conforme a la decisión del usuario, este informe **adapta la rúbrica EP3 al repositorio real (Pedidos360)** y documenta explícitamente qué elementos de la pauta **NO existen** aquí (SQS/ElasticMQ, `SqsConfig`, `PedidoProducer`, Topic Exchange, microservicio RabbitMQ Admin). No se inventan evidencias.
 

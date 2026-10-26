@@ -1,10 +1,12 @@
 export const environment = {
   production: true,
-  apiBaseUrl: '/api', // En produccion a traves de CloudFront o API Gateway
-  msal: {
-    clientId: '00000000-0000-0000-0000-000000000000',
-    tenantId: 'common',
-    redirectUri: window.location.origin,
-    scopes: ['api://pedidos360-api/access_as_user', 'User.Read']
+  apiBaseUrl: '/api',
+  oidc: {
+    authority: 'https://login.microsoftonline.com/REPLACE_WITH_TENANT_ID/v2.0',
+    clientId: 'REPLACE_WITH_CLIENT_ID',
+    redirectUri: `${window.location.origin}/auth/callback`,
+    postLogoutRedirectUri: `${window.location.origin}/home`,
+    scope: 'openid profile email api://REPLACE_WITH_API_CLIENT_ID/access_as_user',
+    responseType: 'code'
   }
 };

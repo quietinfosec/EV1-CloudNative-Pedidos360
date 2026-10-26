@@ -12,9 +12,20 @@ import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
 import org.springframework.amqp.support.converter.MessageConverter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.retry.backoff.FixedBackOffPolicy;
+import org.springframework.retry.policy.SimpleRetryPolicy;
+import org.springframework.retry.support.RetryTemplate;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+/**
+ * EP3: fuente unica de verdad de la topologia RabbitMQ de productos-service.
+ *
+ * <p>Aqui se declaran exchanges, colas, bindings, DLX/DLQ, conversor JSON,
+ * {@link RabbitTemplate} y {@link RetryTemplate}. Ningun productor, consumidor
+ * o script de infraestructura duplica estos nombres: todos referencian las
+ * constantes de esta clase.</p>
+ */
 @Configuration
 public class RabbitMQConfig {
 
@@ -193,6 +204,21 @@ public class RabbitMQConfig {
 		return BindingBuilder.bind(productosErroresDlq)
 				.to(pedidos360DeadLetterExchange)
 				.with(PRODUCTOS_ERRORES_DLQ_ROUTING_KEY);
+	}
+
+	/**
+	 * EP3: reintentos controlados para consumidores con ACK/NACK manual.
+	 * Tras 3 intentos fallidos el consumidor hace basicNack(requeue=false) y el
+	 * mensaje se enruta a la DLQ declarada en la cola.
+	 */
+	@Bean
+	public RetryTemplate rabbitRetryTemplate() {
+		RetryTemplate retryTemplate = new RetryTemplate();
+		retryTemplate.setRetryPolicy(new SimpleRetryPolicy(3));
+		FixedBackOffPolicy backOffPolicy = new FixedBackOffPolicy();
+		backOffPolicy.setBackOffPeriod(500L);
+		retryTemplate.setBackOffPolicy(backOffPolicy);
+		return retryTemplate;
 	}
 
 	@Bean

@@ -8,6 +8,8 @@
 
 > **Estado de línea base (verificado al iniciar):** `115/115` tests en verde (BFF 18 · Pedidos 49 · Productos 48), broker `healthy`, árbol Git limpio en `main` = `b35855f`.
 
+> **Estado final (2026-10-25):** plan ejecutado. Evidencia vigente: BFF **22/22**, Admin **28/28**, Pedidos **69/69**, Productos **69/69**, Frontend **9/9**, OIDC local con Keycloak validado. Ver `06-evidencias-rubrica.md`; las cifras intermedias de este plan son históricas.
+
 ---
 
 ## 0. Resumen del plan

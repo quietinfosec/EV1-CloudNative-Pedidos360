@@ -1,6 +1,7 @@
 package cl.duoc.pedidos360.pedidos.event;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.timeout;
@@ -25,6 +26,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.junit.jupiter.EnabledIf;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.rabbitmq.client.Channel;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import cl.duoc.pedidos360.pedidos.config.RabbitMQConfig;
@@ -70,24 +72,24 @@ class PedidoConsumerRabbitIntegrationTests {
 	}
 
 	@Test
-	void shouldConsumeValidPedidoEventWithoutDeadLettering() {
+	void shouldConsumeValidPedidoEventWithoutDeadLettering() throws Exception {
 		PedidoEvent event = validEvent();
 
 		rabbitTemplate.convertAndSend(RabbitMQConfig.EXCHANGE_NAME, RabbitMQConfig.PEDIDO_CREADO, event);
 
-		verify(consumer, timeout(5000).times(1)).consumeEvento(argThat(received -> received.getEventId().equals(event.getEventId())));
+		verify(consumer, timeout(5000).times(1)).consumeEvento(argThat(received -> received.getEventId().equals(event.getEventId())), any(Message.class), any(Channel.class));
 		assertThat(messageCount(RabbitMQConfig.PEDIDOS_EVENTOS_QUEUE)).isZero();
 		assertThat(messageCount(RabbitMQConfig.PEDIDOS_EVENTOS_DLQ)).isZero();
 	}
 
 	@Test
-	void shouldRetryThreeTimesThenDeadLetterInvalidPedidoEvent() throws Exception {
+	void shouldDeadLetterInvalidPedidoEventAfterRetries() throws Exception {
 		PedidoEvent event = validEvent();
 		event.setEventType("");
 
 		rabbitTemplate.convertAndSend(RabbitMQConfig.EXCHANGE_NAME, RabbitMQConfig.PEDIDO_CREADO, event);
 
-		verify(consumer, timeout(5000).times(3)).consumeEvento(argThat(received -> received.getEventId().equals(event.getEventId())));
+		verify(consumer, timeout(5000).times(1)).consumeEvento(argThat(received -> received.getEventId().equals(event.getEventId())), any(Message.class), any(Channel.class));
 		Message deadLetter = rabbitTemplate.receive(RabbitMQConfig.PEDIDOS_EVENTOS_DLQ, 5000);
 
 		assertThat(deadLetter).isNotNull();

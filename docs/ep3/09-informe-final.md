@@ -2,8 +2,8 @@
 
 - **Asignatura:** DSY1107 Desarrollo Cloud Native I — Parcial N.º 3
 - **Proyecto:** Pedidos360
-- **Rama:** `ep3-rabbitmq` · **Commit base:** `9d0ff1e`
-- **Fecha:** 2026-10-20
+- **Rama:** `main` · **Commit base:** `4175b1c`
+- **Fecha de actualización:** 2026-10-25
 - **Autor:** Responsable de calidad y documentación final
 
 ---
@@ -18,32 +18,34 @@ Dejar el proyecto **listo para entrega y defensa técnica** de la EP3 sin violar
 
 | # | Acción | Resultado |
 |---|---|---|
-| 1 | Verificación de estado Git | Árbol limpio antes de trabajar; rama `ep3-rabbitmq` sin upstream |
-| 2 | Revisión de documentación EP3 | `docs/ep3/01`–`06` presentes y consistentes |
-| 3 | Revisión/actualización de `README.md` | Actualizado: Angular 22, RabbitMQ Admin, ElasticMQ, PostgreSQL 55432, 166 tests, estructura EP3 |
-| 4 | Revisión de secretos | Solo placeholders de desarrollo; `.env.example` limpio |
-| 5 | Revisión de `docker-compose.yml` | 3 servicios; PostgreSQL remapeado a 55432 |
-| 6 | Prueba manual de frontend | Documentada (rutas, login OIDC, flujo de pedidos) — ver §6 |
+| 1 | Verificación de estado Git | Rama `main`, commit base `4175b1c`; cambios de esta actualización en árbol local |
+| 2 | Revisión de documentación EP3 | `docs/ep3/01`–`09` presentes; `06`, `07`, `08` y `09` actualizados al estado real |
+| 3 | Revisión/actualización de `README.md` | Angular 22 + oidc-client-ts, Keycloak local, RabbitMQ Admin, ElasticMQ, PostgreSQL 55432 |
+| 4 | Revisión de secretos | Solo placeholders de desarrollo; `.env.example` limpio; usuario demo documentado |
+| 5 | Revisión de `docker-compose.yml` | Clúster RabbitMQ 2 nodos + PostgreSQL 55432 + ElasticMQ 9324 + Keycloak 8180 |
+| 6 | Prueba de login local | Authorization Code + PKCE contra Keycloak; tokens y claims verificados |
 | 7 | Matriz definitiva de 8 criterios EP3 | En `docs/ep3/08-checklist-entrega.md` §B |
 | 8 | Guion de presentación (10 diapositivas) | `docs/ep3/07-guion-presentacion.md` |
 | 9 | Checklist de entrega | `docs/ep3/08-checklist-entrega.md` |
 | 10 | Informe de limitaciones | §4–§5 de este documento |
-| 11 | Comandos de push (NO ejecutados) | §7 |
+| 11 | Comandos de commit/push (NO ejecutados) | §7 |
 
-### Cambios de contenido en el README
-- Encabezado: alcance EP1/EP2/**EP3**, mensajería y rama.
-- §2.2: `Frontend Web` **Angular 19 → 22**; nueva fila `RabbitMQ Admin Service (:8083)`; nota de topología de mensajería.
-- §10.2: `docker compose up -d` completo + terminal del Admin Service; nota de `run-local.ps1` y puerto PostgreSQL 55432.
-- §11: conteos reales **21 / 65 / 65 / 15** + tablas SQS (65/65) y PostgreSQL (1+1); advertencia de ejecución secuencial.
-- §12: árbol de carpetas actualizado (admin-service, `infra/elasticmq/`, `docs/ep3/01..08`, `docker-compose.yml`).
+### Cambios de contenido principales
+- README: proveedor de identidad local Keycloak + Entra ID en producción; diagrama, secciones 5/8/10/11/12 y conteos actualizados.
+- `docs/authentication.md`: reescrito para OIDC con Authorization Code + PKCE, configuración local/producción y matriz HTTP.
+- `docs/testing.md`: conteos 22/28/69/69/9, total 188 backend, smoke OIDC local y comando de Keycloak.
+- Frontend migrado de MSAL a `oidc-client-ts@3.5.0` con `authGuard`, interceptor, callback `/auth/callback`, perfil y navbar.
+- BFF/Admin: validación de issuer/audience, CORS y validación estricta de DTOs.
 
 ---
 
-## 3. Estado verificado (evidencia real)
+## 3. Estado verificado (evidencia real, 2026-10-25)
 
-- **Contenedores:** `pedidos360-rabbitmq`, `pedidos360-postgres`, `pedidos360-elasticmq` — los tres *healthy*.
-- **Topología RabbitMQ** (leída con `rabbitmqctl`): exchanges `pedidos360.direct.exchange` y `pedidos360.topic.exchange` (durables, tipo correcto), `pedidos360.dlx`; colas `pedidos360.{pedidos,productos,auditoria}.cola` + sus `.dlq`; bindings topic `pedidos.pedido.#`, `productos.producto.#`, `#`.
-- **Pruebas backend:** 166/166 en verde (RabbitMQ). Suites SQS 130 (0 fallos). PostgreSQL real 2 (0 fallos). Build Angular OK.
+- **Clúster RabbitMQ:** nodos `pedidos360-rabbitmq` (5672/15672) y `pedidos360-rabbitmq2` (5673/15673), cookie compartida y `rabbitmq2-join` idempotente. **Validado en vivo:** ambos nodos Running en `cluster_status`, sin alarmas ni particiones (RabbitMQ 4.2.9 / Erlang 27.3.4.19).
+- **Topología RabbitMQ:** exchanges `pedidos360.direct.exchange` y `pedidos360.topic.exchange` (durables), `pedidos360.dlx`; colas `pedidos360.{pedidos,productos,auditoria}.cola` + sus `.dlq`; bindings topic `pedidos.pedido.#`, `productos.producto.#`, `#`.
+- **Pruebas ejecutadas:** BFF **22/22**, Admin **28/28**, Pedidos **69/69** (59 unitarios + 10 de integración), Productos **69/69** (58 unitarios + 11 de integración), Frontend **9/9** (Vitest), DLQ E2E con `x-death` y build Angular OK (`432.56 kB`). Backend total **188**; global **197**.
+- **OIDC local:** Authorization Code + PKCE contra Keycloak emitió `id_token`, `access_token` y `refresh_token`; claims `iss=http://localhost:8180/realms/pedidos360`, `aud=pedidos360-api`, `azp=pedidos360-web`, `roles=ADMIN,USER`.
+- **Seguridad HTTP:** BFF `GET /api/pedidos` sin token → **401** y con token → **200**; Admin `GET /admin/queues` sin token → **401** y con token → **200**; `POST /admin/queues` con `amq.test` → **400**; preflight CORS desde `:4200` → **200**.
 
 ---
 
@@ -51,19 +53,16 @@ Dejar el proyecto **listo para entrega y defensa técnica** de la EP3 sin violar
 
 | # | Limitación | Qué SÍ está probado | Riesgo / impacto | Mitigación sugerida |
 |---|---|---|---|---|
-| L1 | **OIDC real (Entra ID) no probado end-to-end** | Firma/expiración/roles validados con `JwtDecoder` de test; 401/403/200; propagación `BearerTokenPropagationInterceptor` | Medio: la federación real puede revelar diferencias de claims/audiencia | Configurar `AZURE_TENANT_ID`/`AZURE_CLIENT_ID` y ejecutar un login real antes de la demo |
-| L2 | **Frontend usa Client ID placeholder** (`00000000-0000-…`) | Estructura MSAL, guardas de ruta, servicios HTTP | Medio: el login real no funciona sin Client ID | Reemplazar en `environment.ts` / `environment.prod.ts` |
-| L3 | **Sin suite de tests frontend** (0 `.spec.ts`) | `ng build` de producción correcto | Bajo | Añadir specs si el tiempo lo permite (fuera de alcance EP3) |
-| L4 | **Ausencia de `MessageRecoverer` explícito** | Comportamiento por defecto de Spring AMQP (retry + rechazo → DLX → DLQ) verificado | Bajo: funcional, pero sin personalización | Documentado como decisión consciente en `docs/ep3/03` |
-| L5 | **Mensajes de pruebas previas en colas legacy** (`pedidos.eventos.queue`, etc.) | Evidencia válida, no un error | Bajo | **NO limpiar**: borrar colas/mensajes está prohibido por las reglas |
-| L6 | **README histórico decía "Evaluación Parcial 1" y Angular 19** | Corregido en esta entrega | Bajo | Revisar antes del commit |
-| L7 | **Push / merge no ejecutados** | Todo el trabajo está commiteado en local | Alto (entrega) | Requiere autorización explícita (§7) |
+| L1 | **OIDC productivo con Entra ID no probado end-to-end** | OIDC local completo con Keycloak (PKCE, tokens, claims, 401/200, CORS); validación de issuer/audience con `JwtDecoder` de test | Medio: el tenant real puede revelar diferencias de claims/audiencia | Configurar `AZURE_TENANT_ID`/`AZURE_CLIENT_ID` y ejecutar login real antes de la demo |
+| L2 | **Frontend de producción con placeholders** (`REPLACE_WITH_*`) | `environment.ts` local apunta a Keycloak y funciona; build de producción correcto | Medio: el login productivo no funciona sin IDs reales | Reemplazar en `environment.prod.ts` |
+| L3 | **Mensajes de pruebas previas en colas legacy** | Evidencia válida, no un error | Bajo | **NO limpiar**: borrar colas/mensajes está prohibido por las reglas |
+| L4 | **Push / merge no ejecutados** | Cambios en árbol local sobre `main` | Alto (entrega) | Requiere autorización explícita (§7) |
 
-> **Declaración explícita:** la EP3 **no** declara probada una integración OIDC real con Microsoft Entra ID. La verificación descansa en pruebas de test del resource server y en evidencia de código, no en una sesión real contra el tenant.
+> **Declaración explícita:** la EP3 **no** declara probado el login productivo contra Microsoft Entra ID. La autenticación **sí** se validó de extremo a extremo en local contra Keycloak.
 
 ---
 
-## 5. Trazabilidad de commits (Fases 1–9, sin push)
+## 5. Trazabilidad de commits (fases previas, sin push)
 
 | Commit | Fase / contenido |
 |---|---|
@@ -75,26 +74,38 @@ Dejar el proyecto **listo para entrega y defensa técnica** de la EP3 sin violar
 | `94a54ab` | Persistencia PostgreSQL real |
 | `9d0ff1e` | Documentación 04–06 + reconciliación de 01–03 |
 
+Los cambios de OIDC local, CORS, migración a `oidc-client-ts` y actualización documental están **sin commit** en el árbol local.
+
 ---
 
-## 6. Prueba manual de frontend (documentada)
+## 6. Prueba manual de frontend y login local
 
 **Arranque:**
 ```powershell
+# Infraestructura
+docker compose up -d keycloak postgres elasticmq
+.\scripts\rabbitmq-up.ps1
+
+# Backend (JAVA_HOME jdk-21.0.8), perfiles local
+$env:SPRING_PROFILES_ACTIVE='local'; $env:DB_PORT='55432'
+# 8080 BFF, 8081 pedidos, 8082 productos, 8083 admin
+
+# Frontend
 cd frontend\pedidos360-web
 npm ci
 npm start          # http://localhost:4200
 ```
 
-**Rutas a verificar:** `''`→ redirige a `home`; `home` (pública); `login` (botón "Iniciar sesión con Microsoft" → `loginRedirect`); `productos` (pública, catálogo); `pedidos` (`MsalGuard`); `perfil` (`MsalGuard`); `**`→ `home`.
+**Rutas verificadas:** `''` → `home`; `home` (pública); `login` (redirección al emisor OIDC); `auth/callback` (completa PKCE); `productos` (pública); `pedidos` y `perfil` (`authGuard`); `**` → `home`.
 
-**Flujo probado (sin OIDC real):**
-1. `http://localhost:4200` carga el layout con navbar y home. ✅
-2. `/productos` consulta `GET {apiBaseUrl}/productos` (apiBaseUrl = `http://localhost:8080/api`) — requiere BFF arriba. ✅ (con backend local)
-3. `/pedidos` queda tras `MsalGuard`: **sin** Client ID real, MSAL no completa el login → redirección al flujo de inicio de sesión. ⚠️ (limitación L1/L2 declarada)
-4. La pantalla de Pedidos maneja el error de API mostrando *"Error al consultar pedidos. Requiere autenticación JWT en BFF."* — comportamiento esperado sin token. ✅
+**Flujo probado:**
+1. La SPA carga el layout con navbar y home. ✅
+2. `/productos` consulta `GET {apiBaseUrl}/productos` (`http://localhost:8080/api`). ✅
+3. Login con Keycloak (`demo` / `Demo1234!`) completa PKCE y devuelve a la SPA. ✅
+4. `/pedidos` con sesión activa envía `Authorization: Bearer <JWT>` y recibe **200**. ✅
+5. Sin token, BFF/Admin responden **401**; con rol insuficiente, **403**. ✅
 
-**Conclusión de la prueba manual:** la SPA compila, rutea y consume la API del BFF; la autenticación real queda bloqueada por la ausencia de un tenant Entra ID, tal como se declara en §4.
+**Conclusión:** la SPA compila, rutea, autentica contra Keycloak local y consume la API del BFF. El login productivo contra Entra ID queda pendiente de credenciales reales.
 
 ---
 
@@ -108,18 +119,14 @@ git status
 git log --oneline -8
 git branch -vv
 
-# 1. (Opcional) Commit de la preparación final (README + docs 07/08/09)
-git add README.md docs/ep3/07-guion-presentacion.md docs/ep3/08-checklist-entrega.md docs/ep3/09-informe-final.md
-git commit -m "docs(ep3): guion de presentacion, checklist de entrega e informe final"
+# 1. Commit de la actualización (código + docs + infra)
+git add backend docker-compose.yml infra frontend docs README.md
+git commit -m "feat(auth): OIDC local con Keycloak, CORS y actualizacion de evidencias EP3"
 
-# 2. Publicar la rama EP3 en el remoto (PRIMERA vez: crea el upstream)
-git push -u origin ep3-rabbitmq
+# 2. Publicar sobre main (requiere autorización)
+git push origin main
 
-# 3. (Alternativa) Si ya existe upstream
-# git push origin ep3-rabbitmq
-
-# 4. (A decisión del usuario) Integrar a main vía Pull Request en GitHub,
-#    NO mediante merge local directo.
+# 3. (A decisión del usuario) Abrir PR si se trabaja en una rama feature.
 ```
 
 **Remote de referencia:** `origin` = `https://github.com/quietinfosec/EV1-CloudNative-Pedidos360.git`
@@ -130,13 +137,21 @@ git push -u origin ep3-rabbitmq
 
 | Archivo | Tipo | Descripción |
 |---|---|---|
-| `docs/ep3/07-guion-presentacion.md` | Nuevo | 10 diapositivas + guion oral + demo |
-| `docs/ep3/08-checklist-entrega.md` | Nuevo | Checklist + matriz de 8 criterios |
-| `docs/ep3/09-informe-final.md` | Nuevo | Este informe |
-| `README.md` | Modificado | Actualización EP3 (versiones, componentes, pruebas, estructura) |
+| `infra/keycloak/realm-pedidos360.json` | Nuevo | Realm, clientes, usuario demo, roles y mappers |
+| `docs/authentication.md` | Reescrito | OIDC local/producción, PKCE, matriz HTTP y evidencia |
+| `docs/testing.md` | Actualizado | Conteos, smoke OIDC y comando Keycloak |
+| `docs/ep3/06-evidencias-rubrica.md` | Actualizado | Matriz de 8 criterios, conteos y límites |
+| `docs/ep3/07-guion-presentacion.md` | Actualizado | Guion alineado con OIDC local y conteos actuales |
+| `docs/ep3/08-checklist-entrega.md` | Actualizado | Checklist y matriz de criterios |
+| `docs/ep3/09-informe-final.md` | Actualizado | Este informe |
+| `backend/bff-service` | Modificado | CORS, issuer/audience y tests |
+| `backend/rabbitmq-admin-service` | Modificado | Seguridad JWT, validación de DTOs y tests |
+| `backend/pedidos-service`, `backend/productos-service` | Modificado | ACK/NACK manual, consumidores y tests |
+| `frontend/pedidos360-web` | Modificado | OIDC con `oidc-client-ts`, guard, interceptor, callback y tests |
+| `docker-compose.yml`, `infra/rabbitmq/`, `scripts/` | Modificado | Clúster RabbitMQ, Keycloak y utilidades locales |
 
 ---
 
 ## 9. Recomendación final
 
-El proyecto está **apto para entrega y defensa**. Las 8 áreas de la rúbrica EP3 están implementadas y respaldadas por pruebas. El único punto sensible es la **integración OIDC real**, declarada honestamente como no probada contra un tenant productivo (L1/L2). Se recomienda, si el tiempo lo permite, configurar un Client ID real y realizar un login de extremo a extremo antes de la presentación; si no es posible, la defensa debe apoyarse en el guion de `07-guion-presentacion.md`, que ya explicita esta limitación.
+El proyecto está **apto para entrega y defensa**. Las 8 áreas de la rúbrica EP3 están implementadas; admin, consumidores, ACK/NACK y DLQ tienen pruebas unitarias, de integración y E2E en verde contra el clúster RabbitMQ real. La autenticación OIDC está validada localmente con Keycloak. Queda una sola verificación de entorno: **login productivo con Entra ID** (sin tenant/Client ID). Se recomienda configurar las credenciales reales antes de una presentación en producción; el guion de `07-guion-presentacion.md` explicita ese límite.

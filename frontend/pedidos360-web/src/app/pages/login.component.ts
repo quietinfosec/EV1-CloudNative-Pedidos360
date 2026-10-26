@@ -1,7 +1,7 @@
-import { Component, inject } from '@angular/core';
+﻿import { Component, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
-import { MsalService } from '@azure/msal-angular';
+import { AuthService } from '../auth/auth.service';
 
 @Component({
   selector: 'app-login',
@@ -10,19 +10,14 @@ import { MsalService } from '@azure/msal-angular';
   template: `
     <div class="login-container">
       <div class="login-box">
-        <div class="logo">🔐</div>
+        <div class="logo">IDaaS</div>
         <h2>Acceso a Pedidos360</h2>
-        <p class="desc">Inicia sesión con tu cuenta institucional de Microsoft Entra ID para acceder al sistema.</p>
+        <p class="desc">Inicia sesión con el IDaaS local (Keycloak) para acceder al sistema.</p>
 
         <div *ngIf="!isLoggedIn(); else alreadyLoggedIn">
-          <button class="btn btn-microsoft" (click)="login()">
-            <svg class="ms-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 23 23">
-              <path fill="#f35325" d="M1 1h10v10H1z"/>
-              <path fill="#81bc06" d="M12 1h10v10H12z"/>
-              <path fill="#05a6f0" d="M1 12h10v10H1z"/>
-              <path fill="#ffba08" d="M12 12h10v10H12z"/>
-            </svg>
-            Iniciar sesión con Microsoft
+          <button class="btn btn-idaas" (click)="login()">
+            <span class="idaas-icon">OIDC</span>
+            Iniciar sesión con IDaaS
           </button>
         </div>
 
@@ -53,7 +48,20 @@ import { MsalService } from '@azure/msal-angular';
       text-align: center;
       box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
     }
-    .logo { font-size: 2.5rem; margin-bottom: 1rem; }
+    .logo {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 72px;
+      height: 72px;
+      margin-bottom: 1rem;
+      border-radius: 50%;
+      background: #e0f2fe;
+      color: #0369a1;
+      font-weight: 800;
+      font-size: 0.9rem;
+      letter-spacing: 0.04em;
+    }
     h2 { color: #0f172a; margin-bottom: 0.5rem; }
     .desc { color: #64748b; font-size: 0.95rem; margin-bottom: 2rem; line-height: 1.5; }
     .btn {
@@ -70,11 +78,20 @@ import { MsalService } from '@azure/msal-angular';
       border: none;
       transition: all 0.2s;
     }
-    .btn-microsoft {
-      background: #2f2f2f;
+    .btn-idaas {
+      background: #0f172a;
       color: #fff;
     }
-    .btn-microsoft:hover { background: #1a1a1a; }
+    .btn-idaas:hover { background: #1e293b; }
+    .idaas-icon {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      background: #0284c7;
+      color: #fff;
+      border-radius: 4px;
+      padding: 0.2rem 0.4rem;
+    }
     .btn-primary { background: #0284c7; color: #fff; margin-top: 1rem; }
     .btn-primary:hover { background: #0369a1; }
     .logged-in-alert {
@@ -87,20 +104,19 @@ import { MsalService } from '@azure/msal-angular';
   `]
 })
 export class LoginComponent {
-  private readonly msalService = inject(MsalService);
+  private readonly authService = inject(AuthService);
   private readonly router = inject(Router);
 
   isLoggedIn(): boolean {
-    return this.msalService.instance.getAllAccounts().length > 0;
+    return this.authService.isAuthenticated();
   }
 
   getUsername(): string {
-    const accounts = this.msalService.instance.getAllAccounts();
-    return accounts.length > 0 ? (accounts[0].name || accounts[0].username) : '';
+    return this.authService.getUsername();
   }
 
   login(): void {
-    this.msalService.loginRedirect();
+    void this.authService.login();
   }
 
   goToHome(): void {

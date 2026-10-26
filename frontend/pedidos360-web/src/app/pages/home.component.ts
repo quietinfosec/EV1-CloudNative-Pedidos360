@@ -1,7 +1,6 @@
 import { Component, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterLink } from '@angular/router';
-import { MsalService } from '@azure/msal-angular';
 
 @Component({
   selector: 'app-home',
@@ -31,8 +30,8 @@ import { MsalService } from '@azure/msal-angular';
 
         <div class="card">
           <div class="card-icon">🔐</div>
-          <h3>Seguridad & Entra ID</h3>
-          <p>Autenticación federada mediante OAuth2/OIDC con Microsoft Entra ID y tokens JWT en BFF.</p>
+          <h3>Seguridad & IDaaS</h3>
+          <p>Autenticación federada mediante OAuth2/OIDC con Keycloak local o Entra ID en producción, con tokens JWT validados en el BFF.</p>
           <a routerLink="/perfil" class="card-link">Ver Mi Perfil &rarr;</a>
         </div>
       </div>

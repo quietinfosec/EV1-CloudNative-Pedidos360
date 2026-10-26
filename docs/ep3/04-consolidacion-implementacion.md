@@ -6,6 +6,8 @@
 - **Rama:** `ep3-rabbitmq` (sin `git push`)
 - **Alcance:** trabajo de consolidación y verificación sobre la implementación incremental 4.1–4.6, sin eliminar funcionalidad y sin inventar resultados.
 
+> **Documento histórico (2026-10-20).** El estado vigente de la rúbrica está en `06-evidencias-rubrica.md` y `08-checklist-entrega.md`. En particular, §3 de este documento describe el ACK/NACK automático anterior; la implementación actual usa **ACK/NACK manual** con `ManualAckRabbitHandler` + `RetryTemplate`, y el admin service ya no es solo de lectura (CRUD). La autenticación local pasó a **Keycloak + Authorization Code/PKCE**; el estado vigente es BFF **22/22** y Admin **28/28**.
+
 > Las suites se ejecutan **secuencialmente**: pedidos y productos comparten el broker RabbitMQ local y la cola `pedidos360.auditoria.cola` está bindeada con `#`, por lo que correrlas en paralelo contamina los asserts. Además, dos procesos Maven en paralelo colisionan en el lock de `.m2`.
 
 ---
@@ -52,30 +54,30 @@
 
 ## 3. Fase 4 — ACK/NACK y DLQ (commit `a4b3fbc`)
 
-**Configuración efectiva (verificada contra el broker):**
-- `spring.rabbitmq.listener.simple.acknowledge-mode=auto`
-- `retry.enabled=true`, `retry.max-attempts=3`, backoff exponencial (`initial-interval=1000`, `multiplier=2.0`, `max-interval=5000`)
+**Configuración vigente (actualizada 2026-10-24):**
+- `spring.rabbitmq.listener.simple.acknowledge-mode=manual`
+- `spring.rabbitmq.listener.simple.retry.enabled=false` (el retry vive en el consumidor)
+- `RetryTemplate` con `SimpleRetryPolicy(3)` y `FixedBackOffPolicy(500 ms)`
 - `default-requeue-rejected=false`
 
-**Comportamiento:** tras agotar los 3 reintentos, `ConditionalRejectingErrorHandler` emite *"Retry Policy Exhausted"*, rechaza **sin requeue** ⇒ el mensaje va al **DLX** (`pedidos360.dlx`) y de allí a la **DLQ** de la cola (`pedidos360.pedidos.dlq` / `pedidos360.productos.dlq`), con el header `x-death`.
+**Comportamiento:** cada `@RabbitListener` delega en `ManualAckRabbitHandler`. Si la acción termina bien → `basicAck`; si falla los 3 intentos → `basicNack(requeue=false)` ⇒ el mensaje va al **DLX** (`pedidos360.dlx`) y de allí a la **DLQ** de la cola (`pedidos360.pedidos.dlq` / `pedidos360.productos.dlq`).
 
-**Hallazgo:** **no** existe un `MessageRecoverer` explícito en el código. El comportamiento por defecto de Spring AMQP es correcto y suficiente; se documenta en lugar de introducir una clase innecesaria.
-
-**Tests nuevos:** `PedidoDlqIntegrationTests.java` y `ProductoDlqIntegrationTests.java`. Arrancan manualmente el contenedor de listener (`RabbitListenerEndpointRegistry` + `waitForConsumer`), publican un evento al topic y verifican la llegada a la DLQ con `x-death`. Ambos **1/1 verde**.
+**Tests vigentes:** `ManualAckRabbitHandlerTests` (2+2) verifican ACK, 3 intentos y NACK sin requeue. `PedidosColaConsumerTests` / `ProductosColaConsumerTests` (2+2) verifican ACK/NACK desde las colas objetivo. Los tests de integración `*ConsumerRabbitIntegrationTests` y `*DlqIntegrationTests` se ejecutaron contra el clúster real el **2026-10-24**: Pedidos **69/69** y Productos **69/69**, con DLQ y `x-death` verificados end-to-end.
 
 ---
 
 ## 4. Fase 5 — Auditoría de `rabbitmq-admin-service`
 
-**Alcance revisado:** servicio de **observabilidad de sólo lectura** (`GET /admin/queues|exchanges|bindings|dlq`), puerto 8083. El plan **restringió `/admin/dlq` a listado** (el `RabbitManagementHttpClient.listDeadLetterQueues()` filtra por sufijo `.dlq`); no se exige CRUD de creación/borrado.
+**Alcance vigente (actualizado 2026-10-24):** servicio de **observabilidad y gestión** en el puerto 8083.
+- Lectura: `GET /admin/queues|exchanges|bindings|dlq`.
+- CRUD: `POST/DELETE /admin/queues`, `POST/DELETE /admin/exchanges`, `POST/DELETE /admin/bindings`, purge `DELETE /admin/queues/{name}/messages` y publicación `POST /admin/messages`.
+- `RabbitAdminService` centraliza los casos de uso; `RabbitManagementHttpClient` implementa la Management API; los DTOs usan Jakarta Validation (incluye rechazo de prefijo `amq.` y payload máximo 1 MB).
 
 **Seguridad:** `/admin/**` exige `ROLE_ADMIN`; actuator `health`/`info` públicos; ante fallo de la Management API responde `502` con `rabbitmq_management_unavailable`. Credenciales del broker sólo server-side.
 
-**Cobertura (15/15 verde):**
+**Cobertura vigente (28/28 verde):**
 - `AdminSecurityTests` (3): sin token → 401; token sin rol ADMIN → 403; token con `ROLE_ADMIN` → 200.
-- `AdminControllerTests` (5), `RabbitManagementClientTests` (5), `RabbitmqAdminServiceApplicationTests` (2).
-
-**Decisión:** sin cambios de código — el módulo ya cumple la rúbrica aplicable.
+- `AdminControllerTests` (15), `RabbitManagementClientTests` (8), `RabbitmqAdminServiceApplicationTests` (2).
 
 ---
 

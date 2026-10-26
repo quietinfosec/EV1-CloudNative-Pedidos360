@@ -1,17 +1,24 @@
 # =============================================================================
 # Pedidos360 - Infraestructura local (Docker Compose)
 # -----------------------------------------------------------------------------
-# Alcance de esta fase: SOLO el broker RabbitMQ.
+# Incluye:
+#   - Cluster RabbitMQ de 2 nodos (rabbitmq + rabbitmq2), con Management UI
+#     independiente por nodo y un contenedor efimero que forma el cluster.
+#   - PostgreSQL local (perfil local en paridad con Amazon RDS).
+#   - Keycloak local como IDaaS de desarrollo (OIDC Authorization Code + PKCE).
+#   - ElasticMQ (SQS simulado local).
 #
 # - No convierte los microservicios Spring Boot en contenedores.
-# - BFF (:8080), Pedidos (:8081) y Productos (:8082) se siguen ejecutando
-#   desde el host exactamente igual que hoy (scripts/run-local.*, mvnw).
-# - Los puertos 5672/15672 se publican solo en 127.0.0.1 (loopback) para que
-#   la Management UI no quede expuesta en la red local.
+# - BFF (:8080), Pedidos (:8081), Productos (:8082) y Admin (:8083) se siguen
+#   ejecutando desde el host exactamente igual que hoy (scripts/run-local.*, mvnw).
+# - Los puertos se publican solo en 127.0.0.1 (loopback) para que las consolas
+#   de administracion no queden expuestas en la red local.
 # - La topologia (exchange, colas, bindings, routing keys, DLQ) NO se declara
-#   aqui: sera declarada mas adelante desde Spring Boot con RabbitMQConfig,
-#   evitando duplicar definiciones entre Docker y el codigo Java.
+#   aqui: se declara desde Spring Boot con RabbitMQConfig, evitando duplicar
+#   definiciones entre Docker y el codigo Java.
 #
+# Cluster:  rabbitmq  -> AMQP 5672 / UI 15672
+#           rabbitmq2 -> AMQP 5673 / UI 15673
 # Topologia / credenciales: docs/rabbitmq-local.md
 # =============================================================================
 
@@ -52,6 +59,9 @@ services:
       retries: 5
       start_period: 10s
 
+  # ---------------------------------------------------------------------------
+  # Nodo 1 del cluster RabbitMQ.
+  # ---------------------------------------------------------------------------
   rabbitmq:
     image: rabbitmq:4.2-management
     container_name: pedidos360-rabbitmq
@@ -70,6 +80,8 @@ services:
       # spring.rabbitmq.virtual-host=${RABBITMQ_VHOST:/} de los microservicios.
       RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-/}
       RABBITMQ_NODENAME: rabbit@pedidos360-rabbitmq
+      # Cookie Erlang compartida por ambos nodos: requisito para el cluster.
+      RABBITMQ_ERLANG_COOKIE: ${RABBITMQ_ERLANG_COOKIE:-pedidos360-local-cluster-cookie}
 
     ports:
       # 5672  -> AMQP (protocolo que usaran los microservicios)
@@ -89,6 +101,104 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+
+  # ---------------------------------------------------------------------------
+  # Nodo 2 del cluster RabbitMQ.
+  # Arranca como nodo independiente; rabbitmq2-join lo incorpora al cluster
+  # del nodo 1 una vez que ambos reportan healthy.
+  # ---------------------------------------------------------------------------
+  rabbitmq2:
+    image: rabbitmq:4.2-management
+    container_name: pedidos360-rabbitmq2
+    restart: unless-stopped
+
+    hostname: pedidos360-rabbitmq2
+
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-/}
+      RABBITMQ_NODENAME: rabbit@pedidos360-rabbitmq2
+      RABBITMQ_ERLANG_COOKIE: ${RABBITMQ_ERLANG_COOKIE:-pedidos360-local-cluster-cookie}
+
+    ports:
+      # 5673  -> AMQP del nodo 2 (para pruebas de failover)
+      - "127.0.0.1:5673:5672"
+      # 15673 -> Management UI del nodo 2
+      - "127.0.0.1:15673:15672"
+
+    volumes:
+      - rabbitmq2_data:/var/lib/rabbitmq
+
+    networks:
+      - pedidos360-network
+
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # Contenedor efimero: ejecuta rabbitmqctl sobre el nodo 2 para unirlo al
+  # cluster del nodo 1. No arranca un broker. Es idempotente: si el nodo 2 ya
+  # pertenece al cluster, termina sin cambios.
+  rabbitmq2-join:
+    image: rabbitmq:4.2-management
+    container_name: pedidos360-rabbitmq2-join
+    restart: "no"
+
+    environment:
+      RABBITMQ_ERLANG_COOKIE: ${RABBITMQ_ERLANG_COOKIE:-pedidos360-local-cluster-cookie}
+      RABBITMQ_TARGET_NODE: rabbit@pedidos360-rabbitmq2
+      RABBITMQ_PRIMARY_NODE: rabbit@pedidos360-rabbitmq
+
+    entrypoint: ["/bin/bash", "/join-cluster.sh"]
+
+    volumes:
+      - ./infra/rabbitmq/join-cluster.sh:/join-cluster.sh:ro
+
+    networks:
+      - pedidos360-network
+
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      rabbitmq2:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------------------
+  # Keycloak local (IDaaS de desarrollo): emite los JWT que valida el backend
+  # y permite probar el flujo de login OIDC del frontend sin un tenant cloud.
+  # El realm se importa de forma idempotente al arrancar el contenedor.
+  # Consola: http://localhost:8180/admin  (admin / admin)
+  # Usuario demo: demo / Demo1234!  (roles USER y ADMIN)
+  # ---------------------------------------------------------------------------
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.2
+    container_name: pedidos360-keycloak
+    restart: unless-stopped
+
+    command: ["start-dev", "--import-realm"]
+
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      # El issuer debe coincidir con la URL que usa el navegador y el backend.
+      KC_HOSTNAME: localhost
+      KC_HOSTNAME_PORT: 8180
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_ENABLED: "true"
+
+    ports:
+      # 8180 -> consola y endpoints OIDC de Keycloak (solo loopback).
+      - "127.0.0.1:8180:8080"
+
+    volumes:
+      - ./infra/keycloak/realm-pedidos360.json:/opt/keycloak/data/import/realm-pedidos360.json:ro
+
+    networks:
+      - pedidos360-network
 
   # ---------------------------------------------------------------------------
   # ElasticMQ (EP3 - 4.4): broker compatible con AWS SQS para verificar el
@@ -125,5 +235,7 @@ networks:
 volumes:
   rabbitmq_data:
     name: rabbitmq_data
+  rabbitmq2_data:
+    name: rabbitmq2_data
   postgres_data:
     name: postgres_data

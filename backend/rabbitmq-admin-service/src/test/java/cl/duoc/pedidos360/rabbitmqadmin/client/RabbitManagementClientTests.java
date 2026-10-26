@@ -2,20 +2,26 @@ package cl.duoc.pedidos360.rabbitmqadmin.client;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import java.util.List;
+import java.util.Map;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
 import cl.duoc.pedidos360.rabbitmqadmin.dto.BindingSummary;
+import cl.duoc.pedidos360.rabbitmqadmin.dto.CreateQueueRequest;
 import cl.duoc.pedidos360.rabbitmqadmin.dto.ExchangeSummary;
+import cl.duoc.pedidos360.rabbitmqadmin.dto.PublishMessageRequest;
 import cl.duoc.pedidos360.rabbitmqadmin.dto.QueueSummary;
 import cl.duoc.pedidos360.rabbitmqadmin.exception.RabbitManagementException;
 
@@ -118,6 +124,50 @@ class RabbitManagementClientTests {
 
 		assertThatThrownBy(() -> client.listQueues())
 				.isInstanceOf(RabbitManagementException.class);
+		server.verify();
+	}
+
+	@Test
+	void creaColaConVhostCodificado() {
+		server.expect(requestTo(BASE_URL + "/queues/%2F/pedidos360.prueba.cola"))
+				.andExpect(method(HttpMethod.POST))
+				.andExpect(content().json("""
+						{"durable":true,"auto_delete":false,"arguments":{}}
+						"""))
+				.andRespond(withSuccess());
+
+		client.createQueue("/", new CreateQueueRequest(
+				"pedidos360.prueba.cola", "/", true, false, Map.of()));
+
+		server.verify();
+	}
+
+	@Test
+	void eliminaColaConVhostCodificado() {
+		server.expect(requestTo(BASE_URL + "/queues/%2F/pedidos360.prueba.cola"))
+				.andExpect(method(HttpMethod.DELETE))
+				.andRespond(withSuccess());
+
+		client.deleteQueue("/", "pedidos360.prueba.cola");
+
+		server.verify();
+	}
+
+	@Test
+	void publicaMensajeYLeeRouted() {
+		server.expect(requestTo(BASE_URL + "/exchanges/%2F/pedidos360.topic.exchange/publish"))
+				.andExpect(method(HttpMethod.POST))
+				.andExpect(content().json("""
+						{"routing_key":"pedidos.pedido.creado","payload":"{}","payload_encoding":"string"}
+						"""))
+				.andRespond(withSuccess("""
+						{"routed":true}
+						""", MediaType.APPLICATION_JSON));
+
+		boolean routed = client.publish("/", new PublishMessageRequest(
+				"pedidos360.topic.exchange", "pedidos.pedido.creado", "{}", "/"));
+
+		assertThat(routed).isTrue();
 		server.verify();
 	}
 

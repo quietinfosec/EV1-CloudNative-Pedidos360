@@ -69,6 +69,11 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-amqp</artifactId>
 		</dependency>
+		<!-- EP3: reintentos controlados dentro del consumidor (ACK/NACK manual). -->
+		<dependency>
+			<groupId>org.springframework.retry</groupId>
+			<artifactId>spring-retry</artifactId>
+		</dependency>
 		<!-- EP3 (4.4): adaptador SQS/ElasticMQ -->
 		<dependency>
 			<groupId>software.amazon.awssdk</groupId>

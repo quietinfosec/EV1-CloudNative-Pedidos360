@@ -1,7 +1,7 @@
 import { Component, inject } from '@angular/core';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 import { CommonModule } from '@angular/common';
-import { MsalService } from '@azure/msal-angular';
+import { AuthService } from '../auth/auth.service';
 
 @Component({
   selector: 'app-navbar',
@@ -115,22 +115,21 @@ import { MsalService } from '@azure/msal-angular';
   `]
 })
 export class NavbarComponent {
-  private readonly msalService = inject(MsalService);
+  private readonly authService = inject(AuthService);
 
   isLoggedIn(): boolean {
-    return this.msalService.instance.getAllAccounts().length > 0;
+    return this.authService.isAuthenticated();
   }
 
   getUsername(): string {
-    const accounts = this.msalService.instance.getAllAccounts();
-    return accounts.length > 0 ? (accounts[0].name || accounts[0].username) : '';
+    return this.authService.getUsername();
   }
 
   login(): void {
-    this.msalService.loginRedirect();
+    void this.authService.login();
   }
 
   logout(): void {
-    this.msalService.logoutRedirect();
+    void this.authService.logout();
   }
 }

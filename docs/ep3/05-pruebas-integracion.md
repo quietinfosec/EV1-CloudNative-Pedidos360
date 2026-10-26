@@ -2,8 +2,10 @@
 
 - **Asignatura:** DSY1107 Desarrollo Cloud Native I — Parcial N.º 3
 - **Fecha:** 2026-10-20
-- **Entorno:** Windows · PowerShell · Java 21 (`C:\Program Files\Java\jdk-21`) · Spring Boot 3.3.4 · Angular 22 · Docker Desktop
+- **Entorno:** Windows · PowerShell · Java 21 (`C:\Program Files\Microsoft\jdk-21.0.8`) · Spring Boot 3.3.4 · Angular 22 · Docker Desktop
 - **Regla:** todas las cifras de este documento son **salida real** de las suites; ninguna es estimada.
+
+> **Documento histórico (2026-10-20).** La matriz de §2 refleja la ejecución anterior al ACK/NACK manual y al CRUD admin. La evidencia vigente (2026-10-25) está en `06-evidencias-rubrica.md` §2: BFF **22/22**, Admin **28/28**, Pedidos **69/69** (59 unitarios + 10 de integración), Productos **69/69** (58 unitarios + 11 de integración), Frontend **9/9** (Vitest), clúster de 2 nodos validado en vivo, DLQ E2E con `x-death`, smoke OIDC local con Keycloak y build Angular OK.
 
 ---
 
@@ -12,7 +14,7 @@
 Cada servicio tiene su propio wrapper (no hay POM agregador en `backend/`). Ejecutar **secuencialmente** (broker RabbitMQ compartido + lock de `.m2`):
 
 ```powershell
-$env:JAVA_HOME='C:\Program Files\Java\jdk-21'; $env:PATH="$env:JAVA_HOME\bin;$env:PATH"
+$env:JAVA_HOME='C:\Program Files\Microsoft\jdk-21.0.8'; $env:PATH="$env:JAVA_HOME\bin;$env:PATH"
 cd backend\<servicio>
 .\mvnw.cmd -B test
 ```
@@ -30,12 +32,10 @@ $env:MESSAGING_PROVIDER='sqs'
 
 | Servicio | Proveedor | Tests | Fallos | Errores | Skipped | Estado |
 |---|---|---:|---:|---:|---:|---|
-| bff-service | — | 21 | 0 | 0 | 0 | ✅ |
-| pedidos-service | rabbitmq (default) | 65 | 0 | 0 | 0 | ✅ |
-| productos-service | rabbitmq (default) | 65 | 0 | 0 | 0 | ✅ |
-| rabbitmq-admin-service | — | 15 | 0 | 0 | 0 | ✅ |
-| pedidos-service | sqs | 65 | 0 | 0 | 10 | ✅ |
-| productos-service | sqs | 65 | 0 | 0 | 11 | ✅ |
+| bff-service | — | 22 | 0 | 0 | 0 | ✅ |
+| pedidos-service | rabbitmq (default) | 69 | 0 | 0 | 0 | ✅ |
+| productos-service | rabbitmq (default) | 69 | 0 | 0 | 0 | ✅ |
+| rabbitmq-admin-service | — | 28 | 0 | 0 | 0 | ✅ |
 
 Los *skipped* bajo SQS son los tests de **integración Rabbit**, correctamente *gateados* con `@EnabledIf("#{environment.getProperty('messaging.provider','rabbitmq') == 'rabbitmq'}")`; es el comportamiento diseñado, no un fallo.
 
@@ -55,8 +55,8 @@ Los *skipped* bajo SQS son los tests de **integración Rabbit**, correctamente *
 ```
 > ng build
 √ Building...
-Initial total | 506.09 kB | 123.55 kB (estimated transfer)
-Application bundle generation complete. [5.198 seconds]
+Initial total | 432.56 kB | 109.85 kB (estimated transfer)
+Application bundle generation complete.
 BUILD SUCCESS
 ```
 
@@ -89,18 +89,21 @@ Análogo: `ProductoControllerTests` (10), `ProductoServiceTests`, `ProductoRepos
 | Clase | Tipo | Qué verifica |
 |---|---|---|
 | `AdminSecurityTests` | MockMvc + seguridad | 401 / 403 / 200 por rol |
-| `AdminControllerTests` | MockMvc | endpoints `/admin/*` (5) |
-| `RabbitManagementClientTests` | unit | cliente Management API (5) |
+| `AdminControllerTests` | MockMvc | endpoints `/admin/*` (15) |
+| `RabbitManagementClientTests` | unit | cliente Management API (8) |
 | `RabbitmqAdminServiceApplicationTests` | `@SpringBootTest` | contexto (2) |
 
 ### bff-service (`backend/bff-service`)
-Suite 21/21: contexto, propagación de token (`BearerTokenPropagationInterceptor`) y clientes.
+Suite 22/22: contexto, propagación de token (`BearerTokenPropagationInterceptor`), clientes y CORS.
 
 ---
 
 ## 4. Pruebas de integración con infraestructura real
 
-### RabbitMQ (broker `pedidos360-rabbitmq`)
+### RabbitMQ (clúster `pedidos360-rabbitmq` + `pedidos360-rabbitmq2`)
+- **Validado en vivo 2026-10-24:** `rabbitmqctl cluster_status` muestra ambos nodos
+  `Running`, sin alarmas ni particiones; RabbitMQ 4.2.9 / Erlang 27.3.4.19.
+- Suites completas contra el clúster (2026-10-25): Pedidos **69/69** y Productos **69/69**.
 - Topología verificada contra el broker:
   - Exchange `pedidos360.direct.exchange` (direct) y `pedidos360.topic.exchange` (topic).
   - DLX `pedidos360.dlx`; colas principales `pedidos360.{pedidos,productos,auditoria}.cola` + DLQ `.dlq` de dominio.
@@ -111,6 +114,11 @@ Suite 21/21: contexto, propagación de token (`BearerTokenPropagationInterceptor
 - *Healthy* en `127.0.0.1:9324`, cola `pedidos360-eventos`.
 - **Smoke real** (no mock): petición `SendMessage` a la cola → `ApproximateNumberOfMessages` pasó de **4 a 5**, confirmando entrega real por el endpoint SQS.
 
+### Keycloak (`pedidos360-keycloak`, `quay.io/keycloak/keycloak:26.2`)
+- *Running* en `127.0.0.1:8180`, issuer `http://localhost:8180/realms/pedidos360`, realm importado desde `infra/keycloak/realm-pedidos360.json`.
+- Authorization Code + PKCE validado: `id_token`, `access_token` y `refresh_token`; claims `aud=pedidos360-api`, `azp=pedidos360-web`, `roles=ADMIN,USER`.
+- BFF y Admin responden 401 sin token y 200 con token; preflight CORS desde `:4200` responde 200.
+
 ### PostgreSQL (`pedidos360-postgres`, `postgres:16-alpine`)
 - *Healthy* en `127.0.0.1:55432` (remapeado para convivir con un PostgreSQL 18 nativo en `5432`).
 - Tablas `pedidos` y `productos` creadas por los tests de persistencia (`ddl-auto=update`), verificadas con `psql`.
@@ -119,6 +127,6 @@ Suite 21/21: contexto, propagación de token (`BearerTokenPropagationInterceptor
 
 ## 5. Notas y límites declarados
 
-- **JWT con proveedor OIDC real:** los tests de seguridad validan la **cadena de validación** (token inválido → 401, expirado → 401, válido → 200) mediante un `JwtDecoder` de test que rechaza/acepta tokens; **no** se ejecutó contra un tenant de Entra ID real (no disponible en el entorno). No se declara ese extremo como probado.
+- **JWT / OIDC:** los tests de seguridad validan la cadena de validación (token inválido → 401, expirado → 401, válido → 200). Además, el 2026-10-25 se ejecutó un smoke real con **Keycloak local**: Authorization Code + PKCE, tokens con `aud=pedidos360-api`, `azp=pedidos360-web`, `roles=ADMIN,USER`, BFF/Admin 401→200 y preflight CORS 200. **No** se ejecutó el login productivo contra un tenant de Entra ID real; ese extremo no se declara probado.
 - **Suite estándar** excluye el grupo `postgres` para no exigir el contenedor; se ejecuta aparte con `-Dgroups=postgres`.
 - **Sin paralelismo:** los recuentos anteriores se obtuvieron con ejecución **secuencial**; correr módulos en paralelo produce falsos fallos por contaminación del broker.

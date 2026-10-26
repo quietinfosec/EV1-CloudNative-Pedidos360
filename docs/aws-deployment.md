@@ -2,11 +2,14 @@
 
 > Esta documento describe las etapas FUTURAS de despliegue.
 > En esta etapa NO se crean recursos reales en AWS.
+>
+> En local la identidad se resuelve con **Keycloak** (`docker compose up -d keycloak`,
+> `http://localhost:8180/realms/pedidos360`). En AWS se usa **Microsoft Entra ID**.
 
 ## Arquitectura objetivo
 
 ```
-Microsoft Entra ID (JWT)
+Microsoft Entra ID (JWT en produccion) / Keycloak (JWT local)
         |
 Angular -> S3 -> CloudFront
         |
@@ -17,6 +20,10 @@ BFF (EC2, :8080) -- valida JWT
         +---> Pedidos Service (EC2, :8081)
         |
         +---> Productos Service (EC2, :8082)
+        |
+        +---> RabbitMQ Admin Service (EC2, :8083)
+        |
+        +---> RabbitMQ cluster
                   |
                   v
               AWS RDS
@@ -39,7 +46,7 @@ BFF (EC2, :8080) -- valida JWT
 
 ### 3. EC2
 
-- Lanzar 3 instancias EC2 (o 1 con los 3 servicios detras de un ALB).
+- Lanzar 4 instancias EC2 (o 1 con los 4 servicios detras de un ALB), incluyendo `rabbitmq-admin-service`.
 - Amazon Linux 2023, JDK 21.
 - UserData script que instala el JAR y configura `SPRING_PROFILES_ACTIVE=aws`.
 - Variables de entorno inyectadas via Systems Manager Parameter Store.
@@ -88,8 +95,9 @@ BFF (EC2, :8080) -- valida JWT
 
 ## Notas importantes
 
-- **Autenticacion**: Microsoft Entra ID (NO Amazon Cognito). Es requisito de evaluacion.
-- **JWT**: El BFF valida el JWT emitido por Entra ID (issuer, audience, expiracion).
+- **Autenticacion**: Microsoft Entra ID en produccion (NO Amazon Cognito). Keycloak es solo para desarrollo local.
+- **JWT**: El BFF y el Admin Service validan el JWT de Entra ID (firma/JWKS, issuer, audience, expiracion).
+- **Frontend**: reemplazar `REPLACE_WITH_TENANT_ID`, `REPLACE_WITH_CLIENT_ID` y `REPLACE_WITH_API_CLIENT_ID` en `environment.prod.ts`.
 - **Secretos**: Ningun secreto se almacena en el repositorio. Usar AWS Systems Manager
   Parameter Store o Secrets Manager para credenciales de RDS y configuracion de Entra ID.
 - **Costos**: Usar instancias y recursos de nivel gratuito donde sea posible.
