@@ -11,6 +11,29 @@ LOG_DIR="$ROOT/.demo-logs"
 PIDS=()
 
 export SPRING_PROFILES_ACTIVE="local"
+# Configuración local: PostgreSQL se publica en 55432 para no chocar con 5432.
+export DB_HOST="localhost"
+export DB_PORT="55432"
+export DB_NAME="pedidos360"
+export DB_USERNAME="dbadmin"
+export DB_PASSWORD="dbadmin"
+export RABBITMQ_HOST="localhost"
+export RABBITMQ_PORT="5672"
+export RABBITMQ_MGMT_URL="http://localhost:15672/api"
+
+# Spring Boot/Maven requiere JAVA_HOME. Usar Java 21, la versión del proyecto.
+if [[ -z "${JAVA_HOME:-}" ]]; then
+  for candidate in \
+    "C:/Program Files/Java/jdk-21" \
+    "/c/Program Files/Java/jdk-21" \
+    "/mnt/c/Program Files/Java/jdk-21"; do
+    if [[ -d "$candidate" ]]; then JAVA_HOME="$candidate"; break; fi
+  done
+fi
+if [[ -n "${JAVA_HOME:-}" ]]; then
+  export JAVA_HOME
+  export PATH="$JAVA_HOME/bin:$PATH"
+fi
 
 log() { printf '\n[%s] %s\n' "$(date '+%H:%M:%S')" "$*"; }
 fail() { printf '\nERROR: %s\n' "$*" >&2; exit 1; }
@@ -63,7 +86,7 @@ for container in pedidos360-postgres pedidos360-rabbitmq pedidos360-rabbitmq2 pe
 done
 
 log "Levantando infraestructura: PostgreSQL, RabbitMQ, Keycloak y ElasticMQ"
-"${COMPOSE[@]}" up -d
+"${COMPOSE[@]}" up -d --force-recreate rabbitmq2-join
 
 log "Esperando a que PostgreSQL y RabbitMQ estén disponibles"
 for attempt in {1..30}; do

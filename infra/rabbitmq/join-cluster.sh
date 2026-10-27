@@ -1,12 +1,6 @@
 #!/bin/bash
-# =============================================================================
-# Pedidos360 - incorpora el nodo 2 al cluster RabbitMQ local.
-#
-# Este script se ejecuta en un contenedor efimero (rabbitmq2-join) que comparte
-# red y cookie Erlang con los dos nodos. No arranca un broker propio: solo usa
-# rabbitmqctl -n para operar sobre el nodo 2.
-# =============================================================================
-set -euo pipefail
+# Incorpora el nodo 2 al cluster RabbitMQ local.
+set -eu
 
 COOKIE="${RABBITMQ_ERLANG_COOKIE:?RABBITMQ_ERLANG_COOKIE no esta definida}"
 TARGET="${RABBITMQ_TARGET_NODE:-rabbit@pedidos360-rabbitmq2}"
@@ -30,14 +24,12 @@ fi
 echo "[join] Deteniendo la aplicacion del nodo 2..."
 rabbitmqctl -n "$TARGET" stop_app
 
-echo "[join] Reseteando el nodo 2 (sin borrar su volumen)..."
+echo "[join] Reseteando el nodo 2..."
 rabbitmqctl -n "$TARGET" reset
 
 echo "[join] Uniendo $TARGET al cluster de $PRIMARY..."
 rabbitmqctl -n "$TARGET" join_cluster "$PRIMARY"
-
 echo "[join] Arrancando la aplicacion del nodo 2..."
 rabbitmqctl -n "$TARGET" start_app
-
 echo "[join] Estado del cluster:"
 rabbitmqctl -n "$TARGET" cluster_status
