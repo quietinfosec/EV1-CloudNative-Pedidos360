@@ -91,6 +91,7 @@ services:
 
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
+      - ./infra/rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
 
     networks:
       - pedidos360-network

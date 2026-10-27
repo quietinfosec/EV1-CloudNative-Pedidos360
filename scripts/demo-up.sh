@@ -12,12 +12,12 @@ PIDS=()
 
 export SPRING_PROFILES_ACTIVE="local"
 # Configuración local: PostgreSQL se publica en 55432 para no chocar con 5432.
-export DB_HOST="localhost"
+export DB_HOST="127.0.0.1"
 export DB_PORT="55432"
 export DB_NAME="pedidos360"
 export DB_USERNAME="dbadmin"
 export DB_PASSWORD="dbadmin"
-export RABBITMQ_HOST="localhost"
+export RABBITMQ_HOST="127.0.0.1"
 export RABBITMQ_PORT="5672"
 export RABBITMQ_MGMT_URL="http://localhost:15672/api"
 
@@ -164,12 +164,12 @@ log "Iniciando frontend Angular en http://localhost:4200"
 ) >"$LOG_DIR/frontend.log" 2>&1 &
 PIDS+=("$!")
 
-wait_for_url "http://localhost:8180/realms/pedidos360/.well-known/openid-configuration" "Keycloak"
-wait_for_url "http://localhost:8080/actuator/health" "BFF"
-wait_for_url "http://localhost:8081/actuator/health" "Pedidos Service"
-wait_for_url "http://localhost:8082/actuator/health" "Productos Service"
-wait_for_url "http://localhost:8083/actuator/health" "Admin Service"
-wait_for_url "http://localhost:4200" "Frontend Angular"
+wait_for_url "http://127.0.0.1:8180/realms/pedidos360/.well-known/openid-configuration" "Keycloak"
+wait_for_url "http://127.0.0.1:8080/actuator/health" "BFF"
+wait_for_url "http://127.0.0.1:8081/actuator/health" "Pedidos Service"
+wait_for_url "http://127.0.0.1:8082/actuator/health" "Productos Service"
+wait_for_url "http://127.0.0.1:8083/actuator/health" "Admin Service"
+wait_for_url "http://127.0.0.1:4200" "Frontend Angular"
 
 cat <<'EOF'
 
