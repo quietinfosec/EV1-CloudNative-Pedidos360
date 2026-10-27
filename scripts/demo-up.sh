@@ -29,27 +29,44 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-command -v docker >/dev/null 2>&1 || fail "Docker no está instalado o no está en PATH."
 command -v npm >/dev/null 2>&1 || fail "npm no está instalado o no está en PATH."
 command -v java >/dev/null 2>&1 || fail "Java no está instalado o no está en PATH."
 
-docker compose version >/dev/null 2>&1 || fail "Docker Compose no está disponible. Abre Docker Desktop y vuelve a intentarlo."
+# En WSL puede existir un Docker Linux distinto en /usr/bin/docker.
+# Priorizar Docker Desktop de Windows, que sí incluye el plugin Compose.
+DOCKER=(docker)
+if command -v docker.exe >/dev/null 2>&1 && docker.exe compose version >/dev/null 2>&1; then
+  DOCKER=(docker.exe)
+elif ! docker compose version >/dev/null 2>&1; then
+  fail "Docker Compose no está disponible. Abre Docker Desktop y vuelve a intentarlo."
+fi
 
 mkdir -p "$LOG_DIR"
 
+log "Usando ${DOCKER[*]}"
 log "Validando configuración Docker Compose"
 cd "$ROOT"
-docker compose config --quiet
+"${DOCKER[@]}" compose config --quiet
+
+log "Reutilizando contenedores Pedidos360 existentes, si están detenidos"
+for container in pedidos360-postgres pedidos360-rabbitmq pedidos360-rabbitmq2 pedidos360-keycloak pedidos360-elasticmq; do
+  if "${DOCKER[@]}" inspect "$container" >/dev/null 2>&1; then
+    status=$("${DOCKER[@]}" inspect --format '{{.State.Status}}' "$container")
+    if [[ "$status" != "running" ]]; then
+      "${DOCKER[@]}" start "$container" >/dev/null
+    fi
+  fi
+done
 
 log "Levantando infraestructura: PostgreSQL, RabbitMQ, Keycloak y ElasticMQ"
-docker compose up -d
+"${DOCKER[@]}" compose up -d --no-recreate
 
 log "Esperando a que PostgreSQL y RabbitMQ estén disponibles"
 for attempt in {1..30}; do
   postgres_ok=0
   rabbit_ok=0
-  docker inspect --format '{{.State.Health.Status}}' pedidos360-postgres 2>/dev/null | grep -q healthy && postgres_ok=1 || true
-  docker inspect --format '{{.State.Health.Status}}' pedidos360-rabbitmq 2>/dev/null | grep -q healthy && rabbit_ok=1 || true
+  "${DOCKER[@]}" inspect --format '{{.State.Health.Status}}' pedidos360-postgres 2>/dev/null | grep -q healthy && postgres_ok=1 || true
+  "${DOCKER[@]}" inspect --format '{{.State.Health.Status}}' pedidos360-rabbitmq 2>/dev/null | grep -q healthy && rabbit_ok=1 || true
   if [[ "$postgres_ok" == 1 && "$rabbit_ok" == 1 ]]; then break; fi
   [[ "$attempt" == 30 ]] && fail "La infraestructura no quedó saludable. Revisa: docker compose logs postgres rabbitmq"
   sleep 2
