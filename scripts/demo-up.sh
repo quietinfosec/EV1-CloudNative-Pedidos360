@@ -47,6 +47,9 @@ cleanup() {
   trap - EXIT INT TERM
   printf '\n\nDeteniendo servicios de la demostración...\n'
   for pid in "${PIDS[@]:-}"; do
+    if command -v powershell.exe >/dev/null 2>&1; then
+      powershell.exe -NoProfile -Command "Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue" >/dev/null 2>&1 || true
+    fi
     kill "$pid" 2>/dev/null || true
   done
   wait 2>/dev/null || true
@@ -58,6 +61,14 @@ trap cleanup EXIT INT TERM
 
 command -v npm >/dev/null 2>&1 || fail "npm no está instalado o no está en PATH."
 command -v java >/dev/null 2>&1 || fail "Java no está instalado o no está en PATH."
+
+# Evita iniciar una segunda demo sobre puertos ocupados por una ejecución previa.
+if command -v powershell.exe >/dev/null 2>&1; then
+  for port in 8080 8081 8082 8083 4200; do
+    owner=$(powershell.exe -NoProfile -Command "(Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue).OwningProcess" | tr -d '\r')
+    [[ -z "$owner" ]] || fail "El puerto $port ya está ocupado por PID $owner. Cierra la demo anterior antes de iniciar otra."
+  done
+fi
 
 # En WSL puede existir un Docker Linux distinto en /usr/bin/docker.
 # Priorizar Docker Desktop de Windows, que sí incluye el plugin Compose.
@@ -142,12 +153,27 @@ start_backend() {
   log "Iniciando $name en http://localhost:$port"
   (
     cd "$service_dir"
-    if [[ -x ./mvnw ]]; then
+    # En Windows/Git Bash el wrapper .sh puede tener CRLF. Ejecutar el
+    # wrapper .cmd dentro de PowerShell con JAVA_HOME explícito.
+    if command -v powershell.exe >/dev/null 2>&1 && [[ -f ./mvnw.cmd ]]; then
+      service_dir_win="$service_dir"
+      if command -v cygpath >/dev/null 2>&1; then
+        service_dir_win="$(cygpath -w "$service_dir")"
+      elif [[ "$service_dir" == /mnt/c/* ]]; then
+        service_dir_win="C:${service_dir#/mnt/c}"
+        service_dir_win="${service_dir_win//\//\\}"
+      fi
+      powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \
+        "\$env:JAVA_HOME='C:\\Program Files\\Java\\jdk-21'; \$env:PATH=\"\$env:JAVA_HOME\\bin;\$env:PATH\"; Set-Location -LiteralPath '$service_dir_win'; & .\\mvnw.cmd spring-boot:run"
+    elif [[ -x ./mvnw ]]; then
       ./mvnw spring-boot:run
     elif [[ -f ./mvnw ]]; then
-      bash ./mvnw spring-boot:run
+      sed 's/\r$//' ./mvnw > "$LOG_DIR/$name-mvnw" \
+        && chmod +x "$LOG_DIR/$name-mvnw" \
+        && "$LOG_DIR/$name-mvnw" spring-boot:run
     else
-      ./mvnw.cmd spring-boot:run
+      command -v mvn >/dev/null 2>&1 || fail "No se encontró Maven para $name"
+      mvn spring-boot:run
     fi
   ) >"$log_file" 2>&1 &
   PIDS+=("$!")
