@@ -41,18 +41,21 @@ elif ! docker compose version >/dev/null 2>&1; then
   fail "Docker Compose no está disponible. Abre Docker Desktop y vuelve a intentarlo."
 fi
 
+# Nombre fijo para que Compose no mezcle recursos con clones anteriores.
+COMPOSE=("${DOCKER[@]}" compose -p pedidos360)
+
 mkdir -p "$LOG_DIR"
 
-log "Usando ${DOCKER[*]}"
+log "Usando ${DOCKER[*]} con proyecto Compose pedidos360"
 log "Validando configuración Docker Compose"
 cd "$ROOT"
-"${DOCKER[@]}" compose config --quiet
+"${COMPOSE[@]}" config --quiet
 
 log "Comprobando contenedores existentes de Pedidos360"
 for container in pedidos360-postgres pedidos360-rabbitmq pedidos360-rabbitmq2 pedidos360-rabbitmq2-join pedidos360-keycloak pedidos360-elasticmq; do
   if "${DOCKER[@]}" inspect "$container" >/dev/null 2>&1; then
     project=$("${DOCKER[@]}" inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$container" 2>/dev/null || true)
-    if [[ "$project" != "ev2cloud" ]]; then
+    if [[ "$project" != "pedidos360" ]]; then
       log "Eliminando contenedor antiguo $container (se conservan los volúmenes)"
       "${DOCKER[@]}" rm -f "$container" >/dev/null
     fi
@@ -60,7 +63,7 @@ for container in pedidos360-postgres pedidos360-rabbitmq pedidos360-rabbitmq2 pe
 done
 
 log "Levantando infraestructura: PostgreSQL, RabbitMQ, Keycloak y ElasticMQ"
-"${DOCKER[@]}" compose up -d
+"${COMPOSE[@]}" up -d
 
 log "Esperando a que PostgreSQL y RabbitMQ estén disponibles"
 for attempt in {1..30}; do
@@ -69,9 +72,32 @@ for attempt in {1..30}; do
   "${DOCKER[@]}" inspect --format '{{.State.Health.Status}}' pedidos360-postgres 2>/dev/null | grep -q healthy && postgres_ok=1 || true
   "${DOCKER[@]}" inspect --format '{{.State.Health.Status}}' pedidos360-rabbitmq 2>/dev/null | grep -q healthy && rabbit_ok=1 || true
   if [[ "$postgres_ok" == 1 && "$rabbit_ok" == 1 ]]; then break; fi
-  [[ "$attempt" == 30 ]] && fail "La infraestructura no quedó saludable. Revisa: docker compose logs postgres rabbitmq"
+  [[ "$attempt" == 30 ]] && fail "La infraestructura no quedó saludable. Revisa: ${COMPOSE[*]} logs postgres rabbitmq"
   sleep 2
 done
+
+wait_for_url() {
+  local url="$1"
+  local label="$2"
+  for attempt in {1..45}; do
+    if curl -fsS --max-time 2 "$url" >/dev/null 2>&1; then
+      log "$label disponible: $url"
+      return 0
+    fi
+    sleep 2
+  done
+  log "AVISO: $label no respondió todavía: $url"
+  return 0
+}
+
+open_url() {
+  local url="$1"
+  if command -v powershell.exe >/dev/null 2>&1; then
+    powershell.exe -NoProfile -Command "Start-Process '$url'" >/dev/null 2>&1 || true
+  elif command -v explorer.exe >/dev/null 2>&1; then
+    explorer.exe "$url" >/dev/null 2>&1 || true
+  fi
+}
 
 start_backend() {
   local name="$1"
@@ -115,7 +141,12 @@ log "Iniciando frontend Angular en http://localhost:4200"
 ) >"$LOG_DIR/frontend.log" 2>&1 &
 PIDS+=("$!")
 
-sleep 8
+wait_for_url "http://localhost:8180/realms/pedidos360/.well-known/openid-configuration" "Keycloak"
+wait_for_url "http://localhost:8080/actuator/health" "BFF"
+wait_for_url "http://localhost:8081/actuator/health" "Pedidos Service"
+wait_for_url "http://localhost:8082/actuator/health" "Productos Service"
+wait_for_url "http://localhost:8083/actuator/health" "Admin Service"
+wait_for_url "http://localhost:4200" "Frontend Angular"
 
 cat <<'EOF'
 
@@ -138,5 +169,11 @@ cat <<'EOF'
  Presiona Ctrl+C para detener backend y frontend.
 ============================================================
 EOF
+
+log "Abriendo pantallas necesarias en el navegador"
+open_url "http://localhost:4200"
+open_url "http://localhost:8180/admin"
+open_url "http://localhost:15672"
+open_url "http://localhost:8083"
 
 wait
