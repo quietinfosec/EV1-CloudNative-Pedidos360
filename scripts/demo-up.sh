@@ -154,10 +154,10 @@ cat <<'EOF'
  Pedidos360 listo para demostración
 ============================================================
  Frontend Angular : http://localhost:4200
- BFF              : http://localhost:8080
- Pedidos Service  : http://localhost:8081
- Productos        : http://localhost:8082
- Admin RabbitMQ   : http://localhost:8083
+ BFF/API          : http://localhost:8080/api
+ Pedidos API      : http://localhost:8081
+ Productos API    : http://localhost:8082
+ Admin RabbitMQ   : http://localhost:8083/admin/queues
  Keycloak         : http://localhost:8180
  RabbitMQ UI      : http://localhost:15672   guest / guest
  PostgreSQL       : localhost:55432
@@ -171,9 +171,10 @@ cat <<'EOF'
 EOF
 
 log "Abriendo pantallas necesarias en el navegador"
-open_url "http://localhost:4200"
+# El BFF (8080) es una API, no una pantalla. No se abre en el navegador.
+# Las únicas pantallas de demostración son la aplicación, Keycloak y RabbitMQ.
+open_url "http://localhost:4200/home"
 open_url "http://localhost:8180/admin"
 open_url "http://localhost:15672"
-open_url "http://localhost:8083"
 
 wait
