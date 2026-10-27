@@ -48,18 +48,19 @@ log "Validando configuración Docker Compose"
 cd "$ROOT"
 "${DOCKER[@]}" compose config --quiet
 
-log "Reutilizando contenedores Pedidos360 existentes, si están detenidos"
-for container in pedidos360-postgres pedidos360-rabbitmq pedidos360-rabbitmq2 pedidos360-keycloak pedidos360-elasticmq; do
+log "Comprobando contenedores existentes de Pedidos360"
+for container in pedidos360-postgres pedidos360-rabbitmq pedidos360-rabbitmq2 pedidos360-rabbitmq2-join pedidos360-keycloak pedidos360-elasticmq; do
   if "${DOCKER[@]}" inspect "$container" >/dev/null 2>&1; then
-    status=$("${DOCKER[@]}" inspect --format '{{.State.Status}}' "$container")
-    if [[ "$status" != "running" ]]; then
-      "${DOCKER[@]}" start "$container" >/dev/null
+    project=$("${DOCKER[@]}" inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$container" 2>/dev/null || true)
+    if [[ "$project" != "ev2cloud" ]]; then
+      log "Eliminando contenedor antiguo $container (se conservan los volúmenes)"
+      "${DOCKER[@]}" rm -f "$container" >/dev/null
     fi
   fi
 done
 
 log "Levantando infraestructura: PostgreSQL, RabbitMQ, Keycloak y ElasticMQ"
-"${DOCKER[@]}" compose up -d --no-recreate
+"${DOCKER[@]}" compose up -d
 
 log "Esperando a que PostgreSQL y RabbitMQ estén disponibles"
 for attempt in {1..30}; do
