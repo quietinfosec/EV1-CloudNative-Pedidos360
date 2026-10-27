@@ -20,6 +20,7 @@ import { AuthService } from '../auth/auth.service';
           <a routerLink="/productos" routerLinkActive="active">Productos</a>
           <a routerLink="/pedidos" routerLinkActive="active">Pedidos</a>
           <a routerLink="/perfil" routerLinkActive="active">Mi Perfil</a>
+          <a routerLink="/rabbitmq-lab" routerLinkActive="active" class="lab-link">RabbitMQ Lab</a>
         </div>
 
         <div class="nav-auth">

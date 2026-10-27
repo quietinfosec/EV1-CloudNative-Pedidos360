@@ -1,6 +1,7 @@
 export const environment = {
   production: true,
   apiBaseUrl: '/api',
+  rabbitmqAdminUrl: '/admin',
   oidc: {
     authority: 'https://login.microsoftonline.com/REPLACE_WITH_TENANT_ID/v2.0',
     clientId: 'REPLACE_WITH_CLIENT_ID',

@@ -1,6 +1,7 @@
 export const environment = {
   production: false,
-  apiBaseUrl: 'http://localhost:8080/api',
+  apiBaseUrl: 'http://127.0.0.1:8080/api',
+  rabbitmqAdminUrl: 'http://127.0.0.1:8083/admin',
   oidc: {
     authority: 'http://localhost:8180/realms/pedidos360',
     clientId: 'pedidos360-web',

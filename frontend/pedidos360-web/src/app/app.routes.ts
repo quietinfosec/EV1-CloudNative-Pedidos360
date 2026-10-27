@@ -6,6 +6,7 @@ import { AuthCallbackComponent } from './pages/auth-callback.component';
 import { ProductosComponent } from './pages/productos.component';
 import { PedidosComponent } from './pages/pedidos.component';
 import { PerfilComponent } from './pages/perfil.component';
+import { RabbitmqLabComponent } from './pages/rabbitmq-lab.component';
 
 export const routes: Routes = [
   { path: '', redirectTo: 'home', pathMatch: 'full' },
@@ -15,5 +16,6 @@ export const routes: Routes = [
   { path: 'productos', component: ProductosComponent },
   { path: 'pedidos', component: PedidosComponent, canActivate: [authGuard] },
   { path: 'perfil', component: PerfilComponent, canActivate: [authGuard] },
+  { path: 'rabbitmq-lab', component: RabbitmqLabComponent },
   { path: '**', redirectTo: 'home' }
 ];
