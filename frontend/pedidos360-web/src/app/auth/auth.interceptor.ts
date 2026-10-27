@@ -4,7 +4,9 @@ import { environment } from '../../environments/environment';
 import { AuthService } from './auth.service';
 
 export const authInterceptor: HttpInterceptorFn = (request, next) => {
-  if (!request.url.startsWith(environment.apiBaseUrl)) {
+  const isProtectedApi = request.url.startsWith(environment.apiBaseUrl)
+    || request.url.startsWith(environment.rabbitmqAdminUrl);
+  if (!isProtectedApi) {
     return next(request);
   }
 

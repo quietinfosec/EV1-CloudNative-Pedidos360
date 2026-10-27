@@ -9,6 +9,10 @@ set -Eeuo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOG_DIR="$ROOT/.demo-logs"
 PIDS=()
+STARTED_AT="$(date +%s)"
+
+# Nunca continuar con una infraestructura parcialmente levantada.
+export COMPOSE_HTTP_TIMEOUT="${COMPOSE_HTTP_TIMEOUT:-120}"
 
 export SPRING_PROFILES_ACTIVE="local"
 # Configuración local: PostgreSQL se publica en 55432 para no chocar con 5432.
@@ -86,7 +90,7 @@ for container in pedidos360-postgres pedidos360-rabbitmq pedidos360-rabbitmq2 pe
 done
 
 log "Levantando infraestructura: PostgreSQL, RabbitMQ, Keycloak y ElasticMQ"
-"${COMPOSE[@]}" up -d --force-recreate rabbitmq2-join
+"${COMPOSE[@]}" up -d --remove-orphans
 
 log "Esperando a que PostgreSQL y RabbitMQ estén disponibles"
 for attempt in {1..30}; do
@@ -95,22 +99,26 @@ for attempt in {1..30}; do
   "${DOCKER[@]}" inspect --format '{{.State.Health.Status}}' pedidos360-postgres 2>/dev/null | grep -q healthy && postgres_ok=1 || true
   "${DOCKER[@]}" inspect --format '{{.State.Health.Status}}' pedidos360-rabbitmq 2>/dev/null | grep -q healthy && rabbit_ok=1 || true
   if [[ "$postgres_ok" == 1 && "$rabbit_ok" == 1 ]]; then break; fi
-  [[ "$attempt" == 30 ]] && fail "La infraestructura no quedó saludable. Revisa: ${COMPOSE[*]} logs postgres rabbitmq"
+  if [[ "$attempt" == 30 ]]; then
+    "${COMPOSE[@]}" ps >&2 || true
+    "${COMPOSE[@]}" logs --tail=80 postgres rabbitmq rabbitmq2 >&2 || true
+    fail "La infraestructura no quedó saludable."
+  fi
   sleep 2
 done
 
 wait_for_url() {
   local url="$1"
   local label="$2"
-  for attempt in {1..45}; do
+  local attempts="${3:-45}"
+  for ((attempt = 1; attempt <= attempts; attempt++)); do
     if curl -fsS --max-time 2 "$url" >/dev/null 2>&1; then
       log "$label disponible: $url"
       return 0
     fi
-    sleep 2
+    sleep 1
   done
-  log "AVISO: $label no respondió todavía: $url"
-  return 0
+  fail "$label no respondió después de ${attempts}s: $url"
 }
 
 open_url() {
@@ -150,11 +158,16 @@ start_backend "pedidos-service" 8081
 start_backend "productos-service" 8082
 start_backend "rabbitmq-admin-service" 8083
 
+# Si un proceso muere al iniciar, mostrar su log inmediatamente.
+for pid in "${PIDS[@]}"; do
+  kill -0 "$pid" 2>/dev/null || fail "Un backend terminó prematuramente. Revisa .demo-logs/."
+done
+
 log "Instalando dependencias del frontend si es necesario"
 FRONTEND="$ROOT/frontend/pedidos360-web"
 [[ -d "$FRONTEND" ]] || fail "No existe frontend/pedidos360-web"
 if [[ ! -d "$FRONTEND/node_modules" ]]; then
-  (cd "$FRONTEND" && npm install) 2>&1 | tee "$LOG_DIR/frontend-install.log"
+  (cd "$FRONTEND" && npm ci --no-audit --no-fund) 2>&1 | tee "$LOG_DIR/frontend-install.log"
 fi
 
 log "Iniciando frontend Angular en http://localhost:4200"
@@ -170,6 +183,9 @@ wait_for_url "http://127.0.0.1:8081/actuator/health" "Pedidos Service"
 wait_for_url "http://127.0.0.1:8082/actuator/health" "Productos Service"
 wait_for_url "http://127.0.0.1:8083/actuator/health" "Admin Service"
 wait_for_url "http://127.0.0.1:4200" "Frontend Angular"
+
+ELAPSED="$(( $(date +%s) - STARTED_AT ))"
+log "Servicios disponibles en ${ELAPSED}s"
 
 cat <<'EOF'
 
