@@ -91,7 +91,6 @@ services:
 
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
-      - ./infra/rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
 
     networks:
       - pedidos360-network
@@ -231,7 +230,7 @@ services:
 networks:
   pedidos360-network:
     name: pedidos360-network
-    driver: bridge
+    external: true
 
 volumes:
   rabbitmq_data:
